@@ -1,0 +1,14 @@
+{
+	"title": "Evil Fungus",
+	"type": "entity",
+	"tags": [ "fun", "scenic" ],
+	"ignore": [
+		"*.md",
+		"*.blend",
+		"*.blend1",
+		".git*",
+		"tools/*",
+		"renders/*",
+		"workshop/*"
+	]
+}
