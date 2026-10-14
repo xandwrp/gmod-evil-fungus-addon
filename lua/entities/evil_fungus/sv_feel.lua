@@ -19,6 +19,14 @@ local KILL_GAIN = 15
 local NPC_SLOW, NPC_FAST = 0.4, 1.4
 local NPC_RUN = 240
 local RIPPLE_RANGE = 2000
+local FOOD_RADIUS = 40
+local FOOD_PER_KG = 0.5
+local FOOD_VALUE = { 4, 60 }
+local DIGEST_RATE = 4
+local DIGEST_GAIN = 0.8
+local LANDING = { 0.3, 1.2 }
+local LANDING_KG = 100
+local ROT = { 70, 55, 40 }
 
 ENT.WAVE_SPEED = WAVE_SPEED
 
@@ -40,7 +48,19 @@ function ENT:Perceivable(ent)
 			and not (ent:GetMoveType() == MOVETYPE_NOCLIP and not ent:InVehicle())
 			and ent:GetObserverMode() == OBS_MODE_NONE
 	end
-	return Creature(ent) and EvilFungus.Setting("attack_npcs") > 0 and ent:Health() > 0
+	if Creature(ent) then
+		return EvilFungus.Setting("attack_npcs") > 0 and ent:Health() > 0 and EvilFungus.Bleeds(ent)
+	end
+	return EvilFungus.Foods[ent] and EvilFungus.Setting("eat_props") > 0 and not ent:IsPlayerHolding() or false
+end
+
+local function Kilos(ent)
+	local kg = 0
+	for i = 0, ent:GetPhysicsObjectCount() - 1 do
+		local phys = ent:GetPhysicsObjectNum(i)
+		if IsValid(phys) then kg = kg + phys:GetMass() end
+	end
+	return kg
 end
 
 function ENT:Touches(ent)
@@ -80,6 +100,21 @@ function ENT:Feel(now)
 		for ent in pairs(EvilFungus.Creatures) do
 			if IsValid(ent) then Visit(ent) end
 		end
+		for ent in pairs(EvilFungus.Foods) do
+			if IsValid(ent) and ent:GetPos():WithinAABox(mins, maxs) and self:Perceivable(ent) then
+				local node = mat:Nearest(ent:GetPos(), FOOD_RADIUS)
+				if node then
+					local st = self.Touching[ent]
+					if not st then
+						st = { food = true }
+						local landing = Lerp(math.Clamp(Kilos(ent) / LANDING_KG, 0, 1), LANDING[1], LANDING[2])
+						self:Tremor(node, landing, now, ent)
+					end
+					st.node = node
+					touching[ent] = st
+				end
+			end
+		end
 	end
 
 	for ent in pairs(self.Touching) do
@@ -88,13 +123,17 @@ function ENT:Feel(now)
 	self.Touching = touching
 
 	for ent, st in pairs(touching) do
-		local speed = ent:GetVelocity():Length()
-		st.walked = st.walked + speed * dt
-		if st.walked >= STEP_DISTANCE or now >= st.still then
-			st.walked, st.still = 0, now + STILL_STEP
-			self:Tremor(st.node, Strength(ent, speed), now, ent)
+		if st.food then
+			self:Digest(ent, st.node, dt)
+		else
+			local speed = ent:GetVelocity():Length()
+			st.walked = st.walked + speed * dt
+			if st.walked >= STEP_DISTANCE or now >= st.still then
+				st.walked, st.still = 0, now + STILL_STEP
+				self:Tremor(st.node, Strength(ent, speed), now, ent)
+			end
+			self:Feed(ent, st.node, dt)
 		end
-		self:Feed(ent, st.node, dt)
 	end
 
 	for i = #self.Pending, 1, -1 do
@@ -191,6 +230,31 @@ function ENT:Feed(ent, node, dt)
 		self.Eating = nil
 	end
 	mat:SetMass(node, node.m + gain)
+end
+
+-- What can't fight back just rots away into it.
+function ENT:Digest(ent, node, dt)
+	local mat = self.Mat
+	local m = 0
+	mat:Near(ent:GetPos(), GRIP_RADIUS, function(n) m = m + n.m end)
+	if m < GRAB_MASS then return end
+	if ent == self.Prey then self.Eating = true end
+
+	if not ent.EvilFungusFood then
+		ent.EvilFungusFood = math.Clamp(Kilos(ent) * FOOD_PER_KG, FOOD_VALUE[1], FOOD_VALUE[2])
+		ent.EvilFungusLeft = ent.EvilFungusFood
+	end
+	local bite = math.min(ent.EvilFungusLeft, DIGEST_RATE * dt * math.Clamp(m / 8, 0.5, 2))
+	ent.EvilFungusLeft = ent.EvilFungusLeft - bite
+	mat:SetMass(node, node.m + bite * DIGEST_GAIN)
+
+	local k = 1 - ent.EvilFungusLeft / ent.EvilFungusFood
+	ent:SetColor(Color(Lerp(k, 255, ROT[1]), Lerp(k, 255, ROT[2]), Lerp(k, 255, ROT[3])))
+	if ent.EvilFungusLeft <= 0 then
+		if ent == self.Prey then self.Eating = nil end
+		EvilFungus.Foods[ent] = nil
+		ent:Remove()
+	end
 end
 
 function ENT:Release(ent)
