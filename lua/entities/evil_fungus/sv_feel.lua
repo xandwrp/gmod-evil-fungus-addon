@@ -17,6 +17,7 @@ local FEED_GAIN = 0.5
 local KILL_GAIN = 15
 local NPC_SLOW, NPC_FAST = 0.4, 1.4
 local NPC_RUN = 240
+local RIPPLE_RANGE = 2000
 
 ENT.WAVE_SPEED = WAVE_SPEED
 
@@ -124,6 +125,27 @@ function ENT:Tremor(node, strength, now, ent)
 	if self:Debugging() then
 		self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = reach }
 	end
+end
+
+function ENT:Ripple(node, now)
+	if not self:Debugging() then return end
+	local dist = self.Mat:Distances({ [node] = 0 }, function(e) return e.len end, RIPPLE_RANGE)
+	self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = RIPPLE_RANGE }
+end
+
+-- Whatever the other half was feeling, holding or chasing, this half now is.
+function ENT:Adopt(other)
+	for ent, st in pairs(other.Touching) do
+		if not self.Touching[ent] then self.Touching[ent] = st end
+	end
+	for ent in pairs(other.Dragged) do self.Dragged[ent] = true end
+	for ent, bite in pairs(other.Bites) do self.Bites[ent] = math.max(self.Bites[ent] or 0, bite) end
+	for _, p in ipairs(other.Pending) do self.Pending[#self.Pending + 1] = p end
+	for _, w in ipairs(other.Waves) do self.Waves[#self.Waves + 1] = w end
+	if other.FeltAt > self.FeltAt and IsValid(other.Prey) then
+		self.Prey, self.PreyNode, self.FeltAt, self.Eating = other.Prey, other.PreyNode, other.FeltAt, other.Eating
+	end
+	other:InitFeel()
 end
 
 function ENT:Felt(ent, node, now)

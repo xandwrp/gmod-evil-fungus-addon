@@ -33,6 +33,8 @@ local NEAR_GOAL = 96
 
 local ai_disabled = GetConVar("ai_disabled")
 
+EvilFungus.Colonies = EvilFungus.Colonies or {}
+
 function ENT:SpawnFunction(ply, tr, class)
 	if not tr.HitWorld or tr.HitSky then return end
 
@@ -73,10 +75,16 @@ function ENT:Initialize()
 	self.NextDecide, self.NextGoal = 0, 0
 	self.TargetUntil = 0
 	self:InitFeel()
+
+	EvilFungus.Colonies[self] = true
+	for _, node in ipairs(ring) do
+		if self:Meet(node, now) then return end
+	end
 end
 
 function ENT:Think()
 	local now = CurTime()
+	if self.Absorbed then return end
 	if not (ai_disabled and ai_disabled:GetBool()) then
 		if now >= self.NextDecide then
 			self:Decide(now)
@@ -85,6 +93,7 @@ function ENT:Think()
 		local dt = FrameTime()
 		self:Flow(dt, now)
 		self:Spread(dt, now)
+		if self.Absorbed then return end
 		self:Feel(now)
 	end
 	self:DebugDraw(now)
@@ -234,8 +243,40 @@ end
 
 function ENT:Sprout(from, dir, now)
 	local node = self.Mat:Grow(from, dir, now)
-	if node then self.Mat:SetMass(from, from.m - GROW_COST) end
+	if not node then return end
+	self.Mat:SetMass(from, from.m - GROW_COST)
+	self:Meet(node, now)
 	return node
+end
+
+-- There is only one fungus. Two mats that touch recognise each other and carry on as one.
+function ENT:Meet(node, now)
+	local reach = Vector(Mat.FUSE, Mat.FUSE, Mat.FUSE)
+	local pos = node.pos
+	for other in pairs(EvilFungus.Colonies) do
+		local mat = other ~= self and IsValid(other) and not other.Absorbed and other.Mat
+		if mat and mat.mins and pos:WithinAABox(mat.mins - reach, mat.maxs + reach) then
+			local theirs = mat:Nearest(pos, Mat.FUSE, function(n) return Mat.Facing(node, n) and Mat.Reaches(node, n) end)
+			if theirs then return self:Fuse(other, node, theirs, now) end
+		end
+	end
+	return false
+end
+
+function ENT:Fuse(other, mine, theirs, now)
+	local keep, lose = self, other
+	if other.Mat.count > self.Mat.count then keep, lose = other, self end
+
+	keep.Mat:Absorb(lose.Mat)
+	keep.Mat:Link(mine, theirs, now)
+	keep:Adopt(lose)
+	keep:Ripple(mine, now)
+	keep.NextDecide = 0
+
+	lose.Absorbed = true
+	EvilFungus.Colonies[lose] = nil
+	lose:Remove()
+	return lose == self
 end
 
 function ENT:Spread(dt, now)
@@ -258,6 +299,7 @@ function ENT:Spread(dt, now)
 		if best and bestD2 > ARRIVE * ARRIVE then
 			local dir = (target - best.pos):GetNormalized() + VectorRand() * REACH_JITTER
 			self:Sprout(best, dir, now)
+			if self.Absorbed then return end
 		end
 	end
 
@@ -265,9 +307,11 @@ function ENT:Spread(dt, now)
 		self.SpreadDebt = self.SpreadDebt - 1
 		local from = RandomNode(mat.full, Frontier)
 		if from then self:Sprout(from, VectorRand(), now) end
+		if self.Absorbed then return end
 	end
 end
 
 function ENT:OnRemove()
+	EvilFungus.Colonies[self] = nil
 	self:ReleaseAll()
 end
