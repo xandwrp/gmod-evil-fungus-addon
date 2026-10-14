@@ -17,9 +17,13 @@ local NEST_APART = 72
 local SUPPORT = 24
 local CARRY_SPEED = 80
 local CARRY_LIFT = 10
-local GAIN = 6
-local MAX_SPEED = 260
-local RESPONSE = 10
+local GAIN = 12
+local MAX_SPEED = 420
+local RESPONSE = 20
+local STALL_TIME = 1.5
+local STALL_GAIN = 0.95
+local KICK = 2.5
+local KICK_JITTER = 80
 local FLIP_DOT = 0.5
 local FLIP_SPEED = 220
 local TORSO_TOL, LIMB_TOL = 12, 18
@@ -48,8 +52,10 @@ local STANDING_OFFSETS = { Vector(0, 0, 0), Vector(32, 0, 0), Vector(-32, 0, 0),
 local POSE = {
 	pelvis = { 0, 0, 5, TORSO_TOL }, chest = { 16, 0, 6, TORSO_TOL }, head = { 30, 0, 5, TORSO_TOL },
 	lshoulder = { 20, 8, 5, LIMB_TOL }, rshoulder = { 20, -8, 5, LIMB_TOL },
-	lhand = { 34, 30, 3, LIMB_TOL }, rhand = { 34, -30, 3, LIMB_TOL },
-	lfoot = { -34, 16, 3, LIMB_TOL }, rfoot = { -34, -16, 3, LIMB_TOL },
+	lelbow = { 27, 18, 3, LIMB_TOL }, relbow = { 27, -18, 3, LIMB_TOL },
+	lhand = { 32, 27, 3, LIMB_TOL }, rhand = { 32, -27, 3, LIMB_TOL },
+	lknee = { -17, 10, 4, LIMB_TOL }, rknee = { -17, -10, 4, LIMB_TOL },
+	lfoot = { -33, 14, 3, LIMB_TOL }, rfoot = { -33, -14, 3, LIMB_TOL },
 }
 
 local function Drowsy(ent, d)
@@ -244,7 +250,7 @@ local function Nest(s)
 	end
 	if not best then return false end
 
-	s.nest, s.up, s.nestAt, s.okFor = best, best.normal, CurTime(), 0
+	s.nest, s.up, s.nestAt, s.okFor, s.bestError = best, best.normal, CurTime(), 0, nil
 	s.rag:SetNW2Vector(EvilFungus.NEST_VAR, best.pos)
 	s.rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, best.normal)
 	return true
@@ -276,6 +282,33 @@ local function Steer(s, dt)
 				local phys = rag:GetPhysicsObjectNum(s.grips[key])
 				phys:AddAngleVelocity(phys:WorldToLocalVector(axis * FLIP_SPEED))
 			end
+		end
+	end
+end
+
+local function Error(s)
+	local total = 0
+	for key, index in pairs(s.grips) do
+		total = total + s.rag:GetPhysicsObjectNum(index):GetPos():Distance(Target(s, key, s.carry))
+	end
+	return total
+end
+
+-- A limb caught on a joint limit or folded under the body gets shoved, hard, until it comes free.
+local function Unstick(s, now)
+	local err = Error(s)
+	if not s.bestError or err < s.bestError * STALL_GAIN then
+		s.bestError, s.stalledAt = err, now
+		return
+	end
+	if now - s.stalledAt < STALL_TIME then return end
+	s.bestError, s.stalledAt = nil, now
+	for key, index in pairs(s.grips) do
+		local phys = s.rag:GetPhysicsObjectNum(index)
+		local off = Target(s, key, s.carry) - phys:GetPos()
+		local tol = POSE[key][4] * s.loose
+		if off:LengthSqr() > tol * tol then
+			phys:AddVelocity(off * KICK + VectorRand() * KICK_JITTER + s.up * KICK_JITTER)
 		end
 	end
 end
@@ -472,6 +505,7 @@ local function Posing(s, dt, now)
 		s.carry = s.carry + d:GetNormalized() * step
 	end
 	Steer(s, dt)
+	if s.arrived >= 1 then Unstick(s, now) end
 
 	if Posed(s) then
 		s.okFor = s.okFor + dt

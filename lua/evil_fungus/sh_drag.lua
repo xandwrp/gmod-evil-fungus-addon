@@ -15,7 +15,9 @@ EvilFungus.MIN_SCALE = 0.2
 EvilFungus.HOLD_BONES = {
 	pelvis = "ValveBiped.Bip01_Pelvis", chest = "ValveBiped.Bip01_Spine2", head = "ValveBiped.Bip01_Head1",
 	lshoulder = "ValveBiped.Bip01_L_UpperArm", rshoulder = "ValveBiped.Bip01_R_UpperArm",
+	lelbow = "ValveBiped.Bip01_L_Forearm", relbow = "ValveBiped.Bip01_R_Forearm",
 	lhand = "ValveBiped.Bip01_L_Hand", rhand = "ValveBiped.Bip01_R_Hand",
+	lknee = "ValveBiped.Bip01_L_Calf", rknee = "ValveBiped.Bip01_R_Calf",
 	lfoot = "ValveBiped.Bip01_L_Foot", rfoot = "ValveBiped.Bip01_R_Foot",
 }
 
