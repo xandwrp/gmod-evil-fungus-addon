@@ -372,7 +372,12 @@ function ENT:OnRemove()
 	end
 	if not self.Absorbed then
 		for rag in pairs(self.Claimed or {}) do
-			if IsValid(rag) then rag:Remove() end
+			local s = EvilFungus.Sleepers[rag]
+			if s and s.stage < EvilFungus.KEPT then
+				EvilFungus.Sleep.Free(s)
+			elseif IsValid(rag) then
+				rag:Remove()
+			end
 		end
 	end
 	self:ReleaseAll()

@@ -40,7 +40,7 @@ function ENT:InitFeel()
 end
 
 function ENT:Perceivable(ent)
-	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) then return false end
+	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep then return false end
 	if ent:IsPlayer() then
 		return EvilFungus.Setting("attack_players") > 0
 			and not (ai_ignoreplayers and ai_ignoreplayers:GetBool())
@@ -218,7 +218,12 @@ end
 
 function ENT:Claim(rag)
 	self.Claimed[rag] = true
-	EvilFungus.Sleepers[rag] = self
+	local s = EvilFungus.Sleepers[rag]
+	if s then s.fungus = self end
+end
+
+function ENT:Unclaim(rag)
+	self.Claimed[rag] = nil
 end
 
 -- They're asleep, not dead, whatever the scoreboard says. It lives off their breathing.
