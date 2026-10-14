@@ -64,5 +64,8 @@ function ENT:DebugDraw(now)
 		debugoverlay.Line(self.Center, self.Prey:GetPos(), life, PREY, true)
 	end
 	local state = self.Eating and "feeding" or self.Hunting and "hunting" or self.Resting and "resting" or "roaming"
-	debugoverlay.Text(self.Center + self.Up * 24, ("%s  body %d  mat %d"):format(state, self.Body, mat.count), life, false)
+	local at, r = self.Center + self.Up * 24, self.CostReport
+	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d"):format(state, self.Body, mat.count), life, TARGET)
+	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  feel %.2f"):format(
+		r.decide or 0, r.flow or 0, r.grow or 0, r.feel or 0), life, TARGET)
 end

@@ -20,7 +20,7 @@ local SPREAD_RATE = 3
 local REACH_JITTER = 0.7
 local SEED_RING = 8
 local DECIDE_INTERVAL = 0.25
-local GOAL_INTERVAL = 0.5
+local COST_WINDOW = 1
 local WANDER_TIME = { 8, 16 }
 local WANDER_RANGE = 700
 local WANDER_TRIES = 6
@@ -34,6 +34,15 @@ local NEAR_GOAL = 96
 local ai_disabled = GetConVar("ai_disabled")
 
 EvilFungus.Colonies = EvilFungus.Colonies or {}
+
+-- Every strand on the map, all fungus together, since it's all one fungus.
+function EvilFungus.Strands()
+	local n = 0
+	for colony in pairs(EvilFungus.Colonies) do
+		if colony.Mat then n = n + colony.Mat.count end
+	end
+	return n
+end
 
 function ENT:SpawnFunction(ply, tr, class)
 	if not tr.HitWorld or tr.HitSky then return end
@@ -72,8 +81,9 @@ function ENT:Initialize()
 
 	self.Center, self.Up, self.Body = seed.pos, up, share * #ring
 	self.ReachDebt, self.SpreadDebt = 0, 0
-	self.NextDecide, self.NextGoal = 0, 0
+	self.NextDecide = 0
 	self.TargetUntil = 0
+	self.Costs, self.CostReport, self.CostSince = {}, {}, now
 	self:InitFeel()
 
 	EvilFungus.Colonies[self] = true
@@ -86,19 +96,42 @@ function ENT:Think()
 	local now = CurTime()
 	if self.Absorbed then return end
 	if not (ai_disabled and ai_disabled:GetBool()) then
+		local t = SysTime()
 		if now >= self.NextDecide then
 			self:Decide(now)
 			self.NextDecide = now + DECIDE_INTERVAL
+			t = self:Cost("decide", t)
 		end
 		local dt = FrameTime()
 		self:Flow(dt, now)
+		t = self:Cost("flow", t)
 		self:Spread(dt, now)
 		if self.Absorbed then return end
+		t = self:Cost("grow", t)
 		self:Feel(now)
+		self:Cost("feel", t)
 	end
+	self:Report(now)
 	self:DebugDraw(now)
 	self:NextThink(now)
 	return true
+end
+
+function ENT:Cost(name, since)
+	local t = SysTime()
+	self.Costs[name] = (self.Costs[name] or 0) + t - since
+	return t
+end
+
+-- Milliseconds of server time each part took over the last second.
+function ENT:Report(now)
+	local span = now - self.CostSince
+	if span < COST_WINDOW then return end
+	for name, cost in pairs(self.Costs) do
+		self.CostReport[name] = cost * 1000 / span
+		self.Costs[name] = 0
+	end
+	self.CostSince = now
 end
 
 function ENT:Settle()
@@ -141,6 +174,7 @@ end
 function ENT:PickTarget(now)
 	self.TargetUntil = now + math.Rand(WANDER_TIME[1], WANDER_TIME[2])
 	self.Resting = false
+	self.GoalStale = true
 
 	if self.Mat.count > PATROL_NODES and math.random() < PATROL_CHANCE then
 		self.Target = RandomNode(self.Mat.nodes).pos
@@ -176,9 +210,9 @@ function ENT:Decide(now)
 	else
 		if not self.Target or now >= self.TargetUntil then self:PickTarget(now) end
 		goal = self.Goal
-		if not goal or goal.dead or now >= self.NextGoal then
+		if self.GoalStale or not goal or goal.dead then
 			goal = self:Closest(self.Target)
-			self.NextGoal = now + GOAL_INTERVAL
+			self.GoalStale = false
 		end
 		if not self.Resting and goal.m > GROW_MASS and goal.pos:Distance(self.Target) < ARRIVE then
 			self.Resting = true
@@ -187,8 +221,17 @@ function ENT:Decide(now)
 	end
 	self.Goal = goal
 
+	-- Only the body needs to know the way, so the search ends once it has reached every part of it.
 	local mat = self.Mat
-	self.Dist = mat:Distances({ [goal] = 0 }, function(e) return e.len / mat:Conductance(e, now) end)
+	local left, reached = 0, {}
+	for _ in pairs(mat.full) do left = left + 1 end
+	self.Dist = mat:Distances({ [goal] = 0 }, function(e) return e.len / mat:Conductance(e, now) end, nil,
+		function(node)
+			if not mat.full[node] or reached[node] then return false end
+			reached[node] = true
+			left = left - 1
+			return left <= 0
+		end)
 end
 
 local flowList = {}
@@ -245,6 +288,10 @@ function ENT:Sprout(from, dir, now)
 	local node = self.Mat:Grow(from, dir, now)
 	if not node then return end
 	self.Mat:SetMass(from, from.m - GROW_COST)
+	local goal, target = self.Goal, self.Target
+	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
+		self.Goal = node
+	end
 	self:Meet(node, now)
 	return node
 end
@@ -272,6 +319,7 @@ function ENT:Fuse(other, mine, theirs, now)
 	keep:Adopt(lose)
 	keep:Ripple(mine, now)
 	keep.NextDecide = 0
+	keep.GoalStale = true
 
 	lose.Absorbed = true
 	EvilFungus.Colonies[lose] = nil
@@ -281,10 +329,15 @@ end
 
 function ENT:Spread(dt, now)
 	local mat = self.Mat
-	if self.Body < MIN_BODY or mat.count >= EvilFungus.Setting("max_nodes") then return end
+	if self.Body < MIN_BODY then return end
 	local speed = EvilFungus.Setting("grow_speed")
 	self.ReachDebt = math.min(3, self.ReachDebt + REACH_RATE * speed * dt)
 	self.SpreadDebt = math.min(3, self.SpreadDebt + SPREAD_RATE * speed * dt)
+	if self.ReachDebt < 1 and self.SpreadDebt < 1 then return end
+	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") then
+		self.ReachDebt, self.SpreadDebt = 0, 0
+		return
+	end
 
 	local target = self.Target
 	while self.ReachDebt >= 1 and target do

@@ -6,7 +6,7 @@ EvilFungus.SETTINGS = {
 	{ name = "attack_npcs", default = 1, min = 0, max = 1, label = "Eats NPCs",
 		help = "NPCs standing on the mat are food" },
 	{ name = "max_nodes", default = 2500, min = 200, max = 8000, decimals = 0, label = "Mat size",
-		help = "Most strands one fungus can lay before it stops spreading" },
+		help = "Most strands all the fungus on the map can lay together before it stops spreading" },
 	{ name = "start_mass", default = 60, min = 10, max = 400, decimals = 0, label = "Starting body",
 		help = "How much body a fresh fungus has to spread with" },
 	{ name = "grow_speed", default = 1, min = 0, max = 5, decimals = 2, label = "Spread speed",
