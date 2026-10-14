@@ -2,6 +2,7 @@ local FEEL_INTERVAL = 0.1
 local FEEL_RADIUS = 28
 local STANDING = 0.5
 local BOX_PAD = Vector(64, 64, 64)
+local MAX_PENDING = 32
 local WAVE_SPEED = 500
 local WAVE_RANGE = 900
 local STEP_DISTANCE = 56
@@ -23,9 +24,7 @@ ENT.WAVE_SPEED = WAVE_SPEED
 
 local ai_ignoreplayers = GetConVar("ai_ignoreplayers")
 
-local function Creature(ent)
-	return ent:IsNPC() or ent:IsNextBot()
-end
+local Creature = EvilFungus.Creature
 
 function ENT:InitFeel()
 	self.Touching, self.Pending, self.Waves, self.Dragged, self.Bites = {}, {}, {}, {}, {}
@@ -67,15 +66,19 @@ function ENT:Feel(now)
 	local mat = self.Mat
 	local touching = {}
 	if mat.mins then
-		for _, ent in ipairs(ents.FindInBox(mat.mins - BOX_PAD, mat.maxs + BOX_PAD)) do
-			if (ent:IsPlayer() or Creature(ent)) and ent:IsOnGround() and self:Perceivable(ent) then
-				local node = mat:Nearest(ent:GetPos(), FEEL_RADIUS, function(n) return n.normal.z > STANDING end)
-				if node then
-					local st = self.Touching[ent] or { walked = 0, still = now + STILL_STEP }
-					st.node = node
-					touching[ent] = st
-				end
+		local mins, maxs = mat.mins - BOX_PAD, mat.maxs + BOX_PAD
+		local function Visit(ent)
+			if not ent:GetPos():WithinAABox(mins, maxs) or not ent:IsOnGround() or not self:Perceivable(ent) then return end
+			local node = mat:Nearest(ent:GetPos(), FEEL_RADIUS, function(n) return n.normal.z > STANDING end)
+			if node then
+				local st = self.Touching[ent] or { walked = 0, still = now + STILL_STEP }
+				st.node = node
+				touching[ent] = st
 			end
+		end
+		for _, ply in ipairs(player.GetAll()) do Visit(ply) end
+		for ent in pairs(EvilFungus.Creatures) do
+			if IsValid(ent) then Visit(ent) end
 		end
 	end
 
@@ -112,17 +115,17 @@ end
 function ENT:Tremor(node, strength, now, ent)
 	local mat = self.Mat
 	local reach = WAVE_RANGE * strength
-	local dist = mat:Distances({ [node] = 0 }, function(e) return e.len end, reach)
-
+	local debugging = self:Debugging()
 	local nearest = math.huge
-	for n in pairs(mat.full) do
-		local d = dist[n]
-		if d and d < nearest and n.m > FEEL_MASS then nearest = d end
-	end
-	if nearest < math.huge then
+	local dist = mat:Distances({ [node] = 0 }, function(e) return e.len end, reach, function(n, d)
+		if n.m > FEEL_MASS and d < nearest then nearest = d end
+		return not debugging and nearest < math.huge
+	end)
+
+	if nearest < math.huge and #self.Pending < MAX_PENDING then
 		self.Pending[#self.Pending + 1] = { at = now + nearest / WAVE_SPEED, ent = ent, node = node }
 	end
-	if self:Debugging() then
+	if debugging then
 		self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = reach }
 	end
 end

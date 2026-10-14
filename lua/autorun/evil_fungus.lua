@@ -5,4 +5,6 @@ include("evil_fungus/sh_settings.lua")
 include("evil_fungus/sh_drag.lua")
 if CLIENT then
 	include("evil_fungus/cl_settings.lua")
+else
+	include("evil_fungus/sv_creatures.lua")
 end
