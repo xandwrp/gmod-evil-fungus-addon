@@ -38,6 +38,23 @@ hook.Add("RenderScreenspaceEffects", "EvilFungusDream", function()
 	if shown > 0.4 then DrawToyTown(2, ScrH() * (shown - 0.4)) end
 end)
 
+local SWAY = { pitch = { 3, 0.7 }, yaw = { 4, 0.43 }, roll = { 8, 0.55 }, fov = { 6, 0.37 } }
+
+local function Sway(k, t)
+	return SWAY[k][1] * math.sin(t * SWAY[k][2])
+end
+
+-- Watching yourself sleep from somewhere just above, and not quite steady.
+hook.Add("CalcView", "EvilFungusDream", function(ply, origin, angles, fov)
+	if ply:Alive() or not ply:GetNW2Bool(EvilFungus.ASLEEP_VAR, false) then return end
+	local t = RealTime()
+	return {
+		origin = origin,
+		angles = Angle(angles.p + Sway("pitch", t), angles.y + Sway("yaw", t), angles.r + Sway("roll", t)),
+		fov = fov + Sway("fov", t),
+	}
+end)
+
 hook.Add("OnEntityCreated", "EvilFungusDream", function(ent)
 	if ent:GetClass() ~= "prop_ragdoll" or ent.GetPlayerColor then return end
 	function ent:GetPlayerColor()

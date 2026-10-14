@@ -4,6 +4,7 @@ AddCSLuaFile("evil_fungus/sh_drag.lua")
 AddCSLuaFile("evil_fungus/cl_mat.lua")
 AddCSLuaFile("evil_fungus/cl_render.lua")
 AddCSLuaFile("evil_fungus/cl_dream.lua")
+AddCSLuaFile("evil_fungus/cl_sleepers.lua")
 include("evil_fungus/sh_settings.lua")
 include("evil_fungus/sh_drag.lua")
 if CLIENT then
@@ -11,6 +12,7 @@ if CLIENT then
 	include("evil_fungus/cl_mat.lua")
 	include("evil_fungus/cl_render.lua")
 	include("evil_fungus/cl_dream.lua")
+	include("evil_fungus/cl_sleepers.lua")
 else
 	include("evil_fungus/sv_creatures.lua")
 	include("evil_fungus/sv_net.lua")

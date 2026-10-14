@@ -144,6 +144,59 @@ local function Tube(e, ra, rb, sides, cr, cg, cb)
 	end
 end
 
+-- A tube through any list of points, for shapes that aren't mat strands.
+local function Polyline(pts, radii, up, sides, cr, cg, cb, light)
+	local tr = Trig(sides)
+	local n = #pts
+	for i = 1, n do
+		local p, q = pts[math.max(1, i - 1)], pts[math.min(n, i + 1)]
+		local tx, ty, tz = q.x - p.x, q.y - p.y, q.z - p.z
+		local tl = math.sqrt(tx * tx + ty * ty + tz * tz)
+		if tl < 1e-6 then tx, ty, tz, tl = 1, 0, 0, 1 end
+		tx, ty, tz = tx / tl, ty / tl, tz / tl
+
+		local vx, vy, vz = up.x, up.y, up.z
+		local d = vx * tx + vy * ty + vz * tz
+		vx, vy, vz = vx - tx * d, vy - ty * d, vz - tz * d
+		local vl = math.sqrt(vx * vx + vy * vy + vz * vz)
+		if vl < 1e-6 then
+			if math.abs(tz) < 0.9 then vx, vy, vz = 0, 0, 1 else vx, vy, vz = 1, 0, 0 end
+			d = vx * tx + vy * ty + vz * tz
+			vx, vy, vz = vx - tx * d, vy - ty * d, vz - tz * d
+			vl = math.sqrt(vx * vx + vy * vy + vz * vz)
+		end
+		vx, vy, vz = vx / vl, vy / vl, vz / vl
+		local wx, wy, wz = ty * vz - tz * vy, tz * vx - tx * vz, tx * vy - ty * vx
+
+		local pt, r = pts[i], radii[i]
+		local ring = i % 2 + 1
+		local X, Y, Z, S = rx[ring], ry[ring], rz[ring], rs[ring]
+		for k = 0, sides - 1 do
+			local c, s = tr.c[k], tr.s[k]
+			X[k] = pt.x + (vx * c + wx * s) * r
+			Y[k] = pt.y + (vy * c + wy * s) * r
+			Z[k] = pt.z + (vz * c + wz * s) * r
+			S[k] = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
+		end
+
+		if i > 1 then
+			local prev = 3 - ring
+			for k = 0, sides - 1 do
+				local k2 = (k + 1) % sides
+				Vert(prev, k, cr, cg, cb)
+				Vert(prev, k2, cr, cg, cb)
+				Vert(ring, k2, cr, cg, cb)
+				Vert(ring, k, cr, cg, cb)
+			end
+		end
+	end
+end
+
+EvilFungus.Strands = {
+	Polyline = Polyline, Light = Light, MAT = MAT,
+	ROOT = ROOT, VEIN = VEIN, BODY_THIN = BODY_THIN, BODY_THICK = BODY_THICK,
+}
+
 local function Radius(e)
 	return Lerp(e.level / LEVELS, R_THIN, R_THICK)
 end
