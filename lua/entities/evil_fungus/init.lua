@@ -366,5 +366,8 @@ end
 
 function ENT:OnRemove()
 	EvilFungus.Colonies[self] = nil
+	if not self.Absorbed and self.Mat and EvilFungus.Net then
+		for _, node in pairs(self.Mat.nodes) do EvilFungus.Net.Drop(node) end
+	end
 	self:ReleaseAll()
 end

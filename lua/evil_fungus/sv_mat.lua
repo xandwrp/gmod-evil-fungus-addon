@@ -19,6 +19,7 @@ local EMPTY = 1e-3
 
 Mat.STEP = STEP
 Mat.D_FLOOR = D_FLOOR
+Mat.D_MAX = D_MAX
 Mat.EMPTY = EMPTY
 Mat.FUSE = FUSE
 
@@ -62,6 +63,7 @@ end
 function Mat:Add(pos, normal)
 	local node = { pos = pos, normal = normal, m = 0, edges = {} }
 	Place(self, node)
+	if EvilFungus.Net then EvilFungus.Net.Node(node) end
 	return node
 end
 
@@ -73,6 +75,7 @@ function Mat:Absorb(other)
 end
 
 function Mat:Remove(node)
+	if EvilFungus.Net then EvilFungus.Net.Drop(node) end
 	local cell = self.cells[node.cell]
 	if cell then
 		cell[node] = nil
@@ -105,6 +108,7 @@ function Mat:Link(a, b, now)
 	local e = { a = a, b = b, len = math.max(1, a.pos:Distance(b.pos)), D = D_FLOOR, t = now }
 	a.edges[#a.edges + 1] = e
 	b.edges[#b.edges + 1] = e
+	if EvilFungus.Net then EvilFungus.Net.Edge(e) end
 	return e
 end
 
@@ -119,6 +123,7 @@ end
 
 function Mat:Thicken(e, flux, now)
 	e.D = math.min(D_MAX, self:Conductance(e, now) + flux * D_GAIN)
+	if EvilFungus.Net then EvilFungus.Net.Touch(e) end
 end
 
 function Mat:SetMass(node, m)

@@ -1,0 +1,125 @@
+EvilFungus = EvilFungus or {}
+
+local old = EvilFungus.Client
+if old then
+	for _, chunk in pairs(old.chunks) do
+		if chunk.mesh then chunk.mesh:Destroy() end
+	end
+end
+
+local M = { nodes = {}, edges = {}, chunks = {}, body = {} }
+EvilFungus.Client = M
+
+local CHUNK = 256
+local LEVELS = 15
+local BODY_MAX_MASS = 8
+local GROWN = 0
+local THICKENED = 1
+
+M.LEVELS = LEVELS
+
+local function ChunkFor(e)
+	local mid = (e.a.pos + e.b.pos) * 0.5
+	local ix, iy, iz = math.floor(mid.x / CHUNK), math.floor(mid.y / CHUNK), math.floor(mid.z / CHUNK)
+	local key = (ix + 64) * 16384 + (iy + 64) * 128 + (iz + 64)
+	local chunk = M.chunks[key]
+	if not chunk then
+		chunk = { key = key, edges = {}, count = 0, center = Vector((ix + 0.5) * CHUNK, (iy + 0.5) * CHUNK, (iz + 0.5) * CHUNK) }
+		M.chunks[key] = chunk
+	end
+	return chunk
+end
+
+function M.Stale(chunk, delay)
+	chunk.due = math.min(chunk.due or math.huge, RealTime() + delay)
+end
+
+local function Unlink(node, e)
+	for i, oe in ipairs(node.edges) do
+		if oe == e then
+			table.remove(node.edges, i)
+			return
+		end
+	end
+end
+
+local function RemoveEdge(e)
+	M.edges[e.eid] = nil
+	Unlink(e.a, e)
+	Unlink(e.b, e)
+	local chunk = e.chunk
+	if chunk and chunk.edges[e] then
+		chunk.edges[e] = nil
+		chunk.count = chunk.count - 1
+		M.Stale(chunk, GROWN)
+	end
+end
+
+net.Receive("EvilFungusMat", function()
+	for _ = 1, net.ReadUInt(8) do
+		local nid = net.ReadUInt(24)
+		M.nodes[nid] = { nid = nid, pos = net.ReadVector(), normal = net.ReadNormal(), edges = {}, target = 0, shown = 0 }
+	end
+	for _ = 1, net.ReadUInt(8) do
+		local eid, an, bn, level = net.ReadUInt(24), net.ReadUInt(24), net.ReadUInt(24), net.ReadUInt(4)
+		local a, b = M.nodes[an], M.nodes[bn]
+		if a and b and not M.edges[eid] then
+			local e = { eid = eid, a = a, b = b, level = level }
+			M.edges[eid] = e
+			a.edges[#a.edges + 1] = e
+			b.edges[#b.edges + 1] = e
+			local chunk = ChunkFor(e)
+			e.chunk = chunk
+			chunk.edges[e] = true
+			chunk.count = chunk.count + 1
+			M.Stale(chunk, GROWN)
+		end
+	end
+end)
+
+net.Receive("EvilFungusDrop", function()
+	for _ = 1, net.ReadUInt(12) do
+		local node = M.nodes[net.ReadUInt(24)]
+		if node then
+			for i = #node.edges, 1, -1 do RemoveEdge(node.edges[i]) end
+			M.nodes[node.nid] = nil
+			M.body[node] = nil
+		end
+	end
+end)
+
+net.Receive("EvilFungusLevels", function()
+	for _ = 1, net.ReadUInt(12) do
+		local e, level = M.edges[net.ReadUInt(24)], net.ReadUInt(4)
+		if e and e.level ~= level then
+			e.level = level
+			M.Stale(e.chunk, THICKENED)
+		end
+	end
+end)
+
+net.Receive("EvilFungusBody", function()
+	local seen = {}
+	for _ = 1, net.ReadUInt(12) do
+		local node, m = M.nodes[net.ReadUInt(24)], net.ReadUInt(8) / 255 * BODY_MAX_MASS
+		if node then
+			node.target = m
+			seen[node] = true
+			M.body[node] = true
+		end
+	end
+	for node in pairs(M.body) do
+		if not seen[node] then node.target = 0 end
+	end
+end)
+
+local function Ready()
+	net.Start("EvilFungusReady")
+	net.SendToServer()
+end
+
+if IsValid(LocalPlayer()) then
+	Ready()
+else
+	hook.Add("InitPostEntity", "EvilFungusReady", Ready)
+end
