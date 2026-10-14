@@ -20,6 +20,7 @@ local EMPTY = 1e-3
 Mat.STEP = STEP
 Mat.D_FLOOR = D_FLOOR
 Mat.EMPTY = EMPTY
+Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
 	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, nextId = 1 }, Mat)
@@ -33,12 +34,14 @@ local function CellOf(pos)
 	return math.floor(pos.x / CELL), math.floor(pos.y / CELL), math.floor(pos.z / CELL)
 end
 
-function Mat:Add(pos, normal)
-	local node = { id = self.nextId, pos = pos, normal = normal, m = 0, edges = {} }
+local function Place(self, node)
+	node.id = self.nextId
 	self.nextId = self.nextId + 1
 	self.nodes[node.id] = node
 	self.count = self.count + 1
+	if node.m > EMPTY then self.full[node] = true end
 
+	local pos = node.pos
 	local key = Key(CellOf(pos))
 	local cell = self.cells[key]
 	if not cell then
@@ -54,7 +57,19 @@ function Mat:Add(pos, normal)
 	else
 		self.mins, self.maxs = Vector(pos), Vector(pos)
 	end
+end
+
+function Mat:Add(pos, normal)
+	local node = { pos = pos, normal = normal, m = 0, edges = {} }
+	Place(self, node)
 	return node
+end
+
+-- Takes over every strand of another mat, body and all, leaving it empty.
+function Mat:Absorb(other)
+	for _, node in pairs(other.nodes) do Place(self, node) end
+	other.nodes, other.cells, other.full, other.count = {}, {}, {}, 0
+	other.mins, other.maxs = nil, nil
 end
 
 function Mat:Remove(node)
@@ -165,6 +180,14 @@ function Mat:Walk(node, dir, step)
 	if edge then return edge.HitPos, edge.HitNormal end
 end
 
+function Mat.Facing(a, b)
+	return a.normal:Dot(b.normal) > 0.3
+end
+
+function Mat.Reaches(a, b)
+	return not util.TraceLine({ start = a.pos + a.normal * LIFT, endpos = b.pos + b.normal * LIFT, mask = MASK }).Hit
+end
+
 function Mat:Crowded(pos, normal)
 	local crowded = false
 	self:Near(pos, SPACING, function(node)
@@ -184,10 +207,9 @@ function Mat:Grow(from, dir, now)
 	local node = self:Add(pos, normal)
 	self:Link(from, node, now)
 	self:Near(pos, FUSE, function(other)
-		if other ~= node and other ~= from and other.normal:Dot(normal) > 0.3 and not self:Linked(node, other)
+		if other ~= node and other ~= from and Mat.Facing(node, other) and not self:Linked(node, other)
 			and math.random() < FUSE_CHANCE then
-			local tr = util.TraceLine({ start = pos + normal * LIFT, endpos = other.pos + other.normal * LIFT, mask = MASK })
-			if not tr.Hit then self:Link(node, other, now) end
+			if Mat.Reaches(node, other) then self:Link(node, other, now) end
 		end
 	end)
 	return node
