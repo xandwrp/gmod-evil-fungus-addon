@@ -5,6 +5,8 @@ EvilFungus.SETTINGS = {
 		help = "Players standing on the mat are food. At 0 it leaves players alone entirely" },
 	{ name = "attack_npcs", default = 1, min = 0, max = 1, label = "Eats NPCs",
 		help = "People and animals standing on the mat are food. Anything that doesn't bleed never is" },
+	{ name = "sleep_time", default = 4, min = 0.5, max = 30, decimals = 1, label = "Sleep time",
+		help = "Seconds with its body on you before you go under" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
 	{ name = "max_nodes", default = 2500, min = 200, max = 8000, decimals = 0, label = "Mat size",

@@ -13,9 +13,9 @@ local GRIP_RADIUS = 48
 local DRAG_MASS = { 1, 8 }
 local DRAG_MAX = 0.85
 local GRAB_MASS = 2.5
-local FEED_DPS = 10
-local FEED_GAIN = 0.5
-local KILL_GAIN = 15
+local DOSE_MASS = 4
+local SLEEPER_RADIUS = 56
+local BREATH_GAIN = 0.15
 local NPC_SLOW, NPC_FAST = 0.4, 1.4
 local NPC_RUN = 240
 local RIPPLE_RANGE = 2000
@@ -35,7 +35,7 @@ local ai_ignoreplayers = GetConVar("ai_ignoreplayers")
 local Creature = EvilFungus.Creature
 
 function ENT:InitFeel()
-	self.Touching, self.Pending, self.Waves, self.Dragged, self.Bites = {}, {}, {}, {}, {}
+	self.Touching, self.Pending, self.Waves, self.Dragged = {}, {}, {}, {}
 	self.NextFeel, self.FeltAt = 0, -math.huge
 end
 
@@ -121,6 +121,7 @@ function ENT:Feel(now)
 		if not touching[ent] then self:Release(ent) end
 	end
 	self.Touching = touching
+	self:Breathe(dt)
 
 	for ent, st in pairs(touching) do
 		if st.food then
@@ -181,7 +182,8 @@ function ENT:Adopt(other)
 		if not self.Touching[ent] then self.Touching[ent] = st end
 	end
 	for ent in pairs(other.Dragged) do self.Dragged[ent] = true end
-	for ent, bite in pairs(other.Bites) do self.Bites[ent] = math.max(self.Bites[ent] or 0, bite) end
+	for rag in pairs(other.Claimed) do self:Claim(rag) end
+	other.Claimed = {}
 	for _, p in ipairs(other.Pending) do self.Pending[#self.Pending + 1] = p end
 	for _, w in ipairs(other.Waves) do self.Waves[#self.Waves + 1] = w end
 	if other.FeltAt > self.FeltAt and IsValid(other.Prey) then
@@ -210,26 +212,26 @@ function ENT:Feed(ent, node, dt)
 
 	if m < GRAB_MASS then return end
 	if ent == self.Prey then self.Eating = true end
+	local dose = dt / math.max(0.1, EvilFungus.Setting("sleep_time")) * math.Clamp(m / DOSE_MASS, 0.5, 2)
+	if EvilFungus.Sedate(ent, dose, self) and ent == self.Prey then self.Eating = nil end
+end
 
-	local bite = (self.Bites[ent] or 0) + FEED_DPS * dt * math.Clamp(m / 8, 0.5, 2)
-	local whole = math.floor(bite)
-	self.Bites[ent] = bite - whole
-	if whole < 1 then return end
+function ENT:Claim(rag)
+	self.Claimed[rag] = true
+	EvilFungus.Sleepers[rag] = self
+end
 
-	local dmg = DamageInfo()
-	dmg:SetDamage(whole)
-	dmg:SetDamageType(DMG_ACID)
-	dmg:SetAttacker(self)
-	dmg:SetInflictor(self)
-	dmg:SetDamagePosition(ent:GetPos())
-	ent:TakeDamageInfo(dmg)
-
-	local gain = whole * FEED_GAIN
-	if ent:Health() <= 0 or ent:IsPlayer() and not ent:Alive() then
-		gain = gain + KILL_GAIN
-		self.Eating = nil
+-- They're asleep, not dead, whatever the scoreboard says. It lives off their breathing.
+function ENT:Breathe(dt)
+	local mat = self.Mat
+	for rag in pairs(self.Claimed) do
+		if IsValid(rag) then
+			local node = mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
+			if node then mat:SetMass(node, node.m + BREATH_GAIN * dt) end
+		else
+			self.Claimed[rag] = nil
+		end
 	end
-	mat:SetMass(node, node.m + gain)
 end
 
 -- What can't fight back just rots away into it.
@@ -258,7 +260,6 @@ function ENT:Digest(ent, node, dt)
 end
 
 function ENT:Release(ent)
-	self.Bites[ent] = nil
 	if self.Dragged[ent] then
 		self.Dragged[ent] = nil
 		if IsValid(ent) then ent:SetNW2Float(EvilFungus.DRAG_VAR, 0) end

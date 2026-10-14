@@ -83,6 +83,7 @@ function ENT:Initialize()
 	self.ReachDebt, self.SpreadDebt = 0, 0
 	self.NextDecide = 0
 	self.TargetUntil = 0
+	self.Claimed = {}
 	self.Costs, self.CostReport, self.CostSince = {}, {}, now
 	self:InitFeel()
 
@@ -368,6 +369,11 @@ function ENT:OnRemove()
 	EvilFungus.Colonies[self] = nil
 	if not self.Absorbed and self.Mat and EvilFungus.Net then
 		for _, node in pairs(self.Mat.nodes) do EvilFungus.Net.Drop(node) end
+	end
+	if not self.Absorbed then
+		for rag in pairs(self.Claimed or {}) do
+			if IsValid(rag) then rag:Remove() end
+		end
 	end
 	self:ReleaseAll()
 end

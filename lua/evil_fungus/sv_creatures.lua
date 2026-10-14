@@ -34,6 +34,7 @@ end
 EvilFungus.Food = Food
 
 local function Track(ent)
+	if ent.EvilFungusSleeper then return end
 	if Creature(ent) then
 		EvilFungus.Creatures[ent] = true
 	elseif Food(ent) then
