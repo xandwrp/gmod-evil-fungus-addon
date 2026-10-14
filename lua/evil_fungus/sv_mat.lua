@@ -109,6 +109,7 @@ function Mat:Link(a, b, now)
 end
 
 function Mat:Conductance(e, now)
+	if e.t == now then return e.D end
 	if e.D > D_FLOOR then
 		e.D = D_FLOOR + (e.D - D_FLOOR) * math.exp(-D_DECAY * (now - e.t))
 	end
@@ -127,8 +128,9 @@ end
 
 function Mat:Near(pos, radius, visit)
 	local r2 = radius * radius
-	local x0, y0, z0 = CellOf(pos - Vector(radius, radius, radius))
-	local x1, y1, z1 = CellOf(pos + Vector(radius, radius, radius))
+	local px, py, pz = pos.x, pos.y, pos.z
+	local x0, y0, z0 = math.floor((px - radius) / CELL), math.floor((py - radius) / CELL), math.floor((pz - radius) / CELL)
+	local x1, y1, z1 = math.floor((px + radius) / CELL), math.floor((py + radius) / CELL), math.floor((pz + radius) / CELL)
 	for ix = x0, x1 do
 		for iy = y0, y1 do
 			for iz = z0, z1 do
@@ -250,7 +252,8 @@ local function Pop(h)
 end
 
 -- Graph distance from the sources, by each edge's cost, out to the limit.
-function Mat:Distances(sources, cost, limit)
+-- Stops as soon as stop(node, d) says so; everything nearer than that node is exact, the rest is left unfinished.
+function Mat:Distances(sources, cost, limit, stop)
 	limit = limit or math.huge
 	local dist, h = {}, { n = 0, d = {}, v = {} }
 	for node, d in pairs(sources) do
@@ -260,6 +263,7 @@ function Mat:Distances(sources, cost, limit)
 	while h.n > 0 do
 		local d, node = Pop(h)
 		if d <= dist[node] then
+			if stop and stop(node, d) then return dist, node, d end
 			for _, e in ipairs(node.edges) do
 				local other = e.a == node and e.b or e.a
 				local nd = d + cost(e)
