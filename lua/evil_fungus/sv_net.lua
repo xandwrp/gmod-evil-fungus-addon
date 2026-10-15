@@ -14,6 +14,7 @@ local BODY_MIN = 0.08
 local BODY_LIMIT = 800
 local DECAY_INTERVAL = 2
 local DROP_CHUNK = 2000
+local LEVEL_SLACK = 0.75
 
 Net.LEVELS = LEVELS
 Net.BODY_MAX_MASS = BODY_MAX_MASS
@@ -24,9 +25,13 @@ util.AddNetworkString("EvilFungusDrop")
 util.AddNetworkString("EvilFungusLevels")
 util.AddNetworkString("EvilFungusBody")
 
-function Net.Level(e)
+local function Thickness(e)
 	local Mat = EvilFungus.Mat
-	return math.Clamp(math.Round((e.D - Mat.D_FLOOR) / (Mat.D_MAX - Mat.D_FLOOR) * LEVELS), 0, LEVELS)
+	return (e.D - Mat.D_FLOOR) / (Mat.D_MAX - Mat.D_FLOOR) * LEVELS
+end
+
+function Net.Level(e)
+	return math.Clamp(math.floor(Thickness(e) + 0.5), 0, LEVELS)
 end
 
 function Net.Node(node)
@@ -42,9 +47,12 @@ function Net.Edge(e)
 	Net.nextEdge = Net.nextEdge + 1
 end
 
+-- A vein hovering on the line between two thicknesses would flicker back and forth, and every flicker is a rebuilt chunk.
 function Net.Touch(e)
 	if not e.eid then return end
-	local level = Net.Level(e)
+	local x = Thickness(e)
+	if math.abs(x - e.level) < LEVEL_SLACK then return end
+	local level = math.Clamp(math.floor(x + 0.5), 0, LEVELS)
 	if level ~= e.level then
 		e.level = level
 		Net.dirty[e] = true
