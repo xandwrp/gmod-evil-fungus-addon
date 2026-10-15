@@ -11,7 +11,8 @@ local CONSUME_UPDATE = 1
 local WEAR_OFF = 8
 local DOSE_FRESH = 0.3
 
-local NEST_SEARCH = 96
+local NEST_SEARCH = 192
+local NEST_FAR = 400
 local NEST_CANDIDATES = 12
 local NEST_APART = 72
 local SUPPORT = 24
@@ -22,8 +23,9 @@ local MAX_SPEED = 420
 local RESPONSE = 20
 local STALL_TIME = 1.5
 local STALL_GAIN = 0.95
-local KICK = 2.5
-local KICK_JITTER = 80
+local KICK = 1.2
+local KICK_JITTER = 35
+local TORSO = { pelvis = true, chest = true, head = true }
 local FLIP_DOT = 0.5
 local FLIP_SPEED = 220
 local TORSO_TOL, LIMB_TOL = 12, 18
@@ -31,7 +33,11 @@ local FACE_UP = 0.6
 local POSED_FOR = 0.5
 local POSE_TIMEOUT = 15
 local LOOSEN = 1.3
-local EXTRACT = 72
+local EXTRACT = 80
+local TORN_FOR = 0.35
+local HIT_GRACE = 2
+local TUG_GRIP = 2
+local SLAM_SPEED = 250
 local WAKE_AFTER = 10
 
 local SHRINK_SPAN = 0.25
@@ -232,6 +238,10 @@ local function Nest(s)
 		if not s.rejected[node] then list[#list + 1] = { node = node, d2 = d2 } end
 	end)
 	table.sort(list, function(a, b) return a.d2 < b.d2 end)
+	if #list == 0 then
+		local far = fungus:Closest(from)
+		if far and not s.rejected[far] and far.pos:DistToSqr(from) < NEST_FAR * NEST_FAR then list[1] = { node = far } end
+	end
 
 	local best, bestScore
 	for i = 1, math.min(#list, NEST_CANDIDATES) do
@@ -256,16 +266,22 @@ local function Nest(s)
 	return true
 end
 
--- Arms out, legs out, back to the mat: the way it likes to keep things.
+local function Tugged(s, now)
+	return s.gripped or now - (s.hitAt or -math.huge) < HIT_GRACE
+end
+
+-- Arms out, legs out, back to the mat: the way it likes to keep things. Pull on one and it pulls back harder.
 local function Steer(s, dt)
 	local at = s.carry
 	local rag = s.rag
+	local grip = Tugged(s, CurTime()) and TUG_GRIP or 1
+	local top = MAX_SPEED * grip
 	for key, index in pairs(s.grips) do
 		local phys = rag:GetPhysicsObjectNum(index)
 		if IsValid(phys) then
-			local want = (Target(s, key, at) - phys:GetPos()) * GAIN
+			local want = (Target(s, key, at) - phys:GetPos()) * (GAIN * grip)
 			local speed = want:Length()
-			if speed > MAX_SPEED then want = want * (MAX_SPEED / speed) end
+			if speed > top then want = want * (top / speed) end
 			local vel = phys:GetVelocity()
 			phys:SetVelocity(vel + (want - vel) * math.min(1, RESPONSE * dt))
 			phys:Wake()
@@ -294,7 +310,7 @@ local function Error(s)
 	return total
 end
 
--- A limb caught on a joint limit or folded under the body gets shoved, hard, until it comes free.
+-- An arm or leg caught on a joint limit or folded under the body gets shoved until it comes free.
 local function Unstick(s, now)
 	local err = Error(s)
 	if not s.bestError or err < s.bestError * STALL_GAIN then
@@ -307,7 +323,7 @@ local function Unstick(s, now)
 		local phys = s.rag:GetPhysicsObjectNum(index)
 		local off = Target(s, key, s.carry) - phys:GetPos()
 		local tol = POSE[key][4] * s.loose
-		if off:LengthSqr() > tol * tol then
+		if not TORSO[key] and off:LengthSqr() > tol * tol then
 			phys:AddVelocity(off * KICK + VectorRand() * KICK_JITTER + s.up * KICK_JITTER)
 		end
 	end
@@ -323,9 +339,15 @@ local function Posed(s)
 	return not s.biped or Facing(s):Dot(s.up) > FACE_UP
 end
 
-local function Torn(s)
+-- Only something from outside gets a sleeper back: a hand on them, a hit, a blast. Flinging them about itself doesn't count.
+local function Torn(s, dt, now)
 	local pelvis = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
-	return pelvis:DistToSqr(Target(s, "pelvis", s.carry)) > EXTRACT * EXTRACT
+	if pelvis:DistToSqr(Target(s, "pelvis", s.carry)) > EXTRACT * EXTRACT and Tugged(s, now) then
+		s.tornFor = (s.tornFor or 0) + dt
+		return s.tornFor >= TORN_FOR
+	end
+	s.tornFor = 0
+	return false
 end
 
 -- Outermost parts go first, the trunk last, and the head not at all.
@@ -492,11 +514,16 @@ function Sleep.Hold(rag, owner, fungus, s)
 	Sleep.sleepers[rag] = s
 	SetStage(s, POSING)
 	if IsValid(fungus) then fungus:Claim(rag) end
+	rag:AddCallback("PhysicsCollide", function(ent, data)
+		local held = Sleep.sleepers[ent]
+		local hit = data.HitEntity
+		if held and IsValid(hit) and not hit:IsWorld() and data.Speed > SLAM_SPEED then held.hitAt = CurTime() end
+	end)
 	if not Nest(s) then Sleep.Free(s) end
 end
 
 local function Posing(s, dt, now)
-	if Torn(s) then return Sleep.Free(s) end
+	if Torn(s, dt, now) then return Sleep.Free(s) end
 	local floor = s.nest.pos
 	local d = floor - s.carry
 	local step = CARRY_SPEED * dt
@@ -534,7 +561,7 @@ hook.Add("Tick", "EvilFungusSleep", function()
 		elseif s.stage == POSING then
 			if s.nest and not s.nest.dead and IsValid(s.fungus) then Posing(s, dt, now) else Sleep.Free(s) end
 		elseif s.stage == CONSUMING then
-			if Torn(s) then Sleep.Free(s) else Steer(s, dt) end
+			if Torn(s, dt, now) then Sleep.Free(s) else Steer(s, dt) end
 		end
 	end
 end)
@@ -666,7 +693,33 @@ hook.Add("CanTool", "EvilFungusSleep", function(_, tr) if IsValid(tr.Entity) and
 hook.Add("CanProperty", "EvilFungusSleep", function(_, _, ent) if Held(ent) then return false end end)
 hook.Add("EntityTakeDamage", "EvilFungusSleep", function(ent)
 	if ent.EvilFungusAsleep or Locked(ent) then return true end
+	local s = Sleep.sleepers[ent]
+	if s then s.hitAt = CurTime() end
 end)
+
+local function Grabbed(_, ent)
+	local s = Sleep.sleepers[ent]
+	if s then s.gripped = true end
+end
+
+local function Dropped(_, ent)
+	local s = Sleep.sleepers[ent]
+	if s then
+		s.gripped = nil
+		s.hitAt = CurTime()
+	end
+end
+
+local function Punted(_, ent)
+	local s = Sleep.sleepers[ent]
+	if s then s.hitAt = CurTime() end
+end
+
+hook.Add("OnPhysgunPickup", "EvilFungusSleep", Grabbed)
+hook.Add("PhysgunDrop", "EvilFungusSleep", Dropped)
+hook.Add("GravGunOnPickedUp", "EvilFungusSleep", Grabbed)
+hook.Add("GravGunOnDropped", "EvilFungusSleep", Dropped)
+hook.Add("GravGunPunt", "EvilFungusSleep", Punted)
 
 hook.Add("PlayerDeathThink", "EvilFungusSleep", function(ply)
 	if ply.EvilFungusHeld and EvilFungus.Setting("give_up") == 0 then return false end
