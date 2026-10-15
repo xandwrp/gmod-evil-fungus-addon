@@ -14,14 +14,29 @@ local LIFT = 0.45
 local BEND = 0.35
 local WIGGLE = 0.12
 local DRAW_RANGE = 6000
-local BUILD_BUDGET = 700
+local BUILD_BUDGET = 400
 local MAX_CHUNK_EDGES = 1500
 local BODY_BATCH = 200
+local BODY_NODES = 500
+local BODY_LOD = { { 1200, 6, 2 }, { 3000, 4, 1 }, { math.huge, 3, 1 } }
 local BODY_R = 2.2
 local BODY_SHOW = 6
 local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
+
+local COST_SMOOTH = 0.05
+local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
+
+EvilFungus.Cost = EvilFungus.Cost or {}
+
+-- Milliseconds this part took, smoothed over the last few dozen frames.
+function EvilFungus.Measure(name, since)
+	local t = SysTime()
+	local cost = EvilFungus.Cost
+	cost[name] = Lerp(COST_SMOOTH, cost[name] or 0, (t - since) * 1000)
+	return t
+end
 
 local ROOT = { 165, 155, 135 }
 local VEIN = { 205, 180, 115 }
@@ -68,7 +83,8 @@ local function Vert(ring, k, cr, cg, cb)
 end
 
 -- One strand as a short tube bowed around corners and wavering a little, radius ra at its old end and rb at its new one.
-local function Tube(e, ra, rb, sides, cr, cg, cb)
+local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
+	segments = segments or SEGMENTS
 	local a, b = e.a, e.b
 	local na, nb = a.normal, b.normal
 	local la, lb = Light(a), Light(b)
@@ -93,8 +109,8 @@ local function Tube(e, ra, rb, sides, cr, cg, cb)
 	local cz = (az + bz) * 0.5 + uz * bend + sz * wig
 
 	local tr = Trig(sides)
-	for seg = 0, SEGMENTS do
-		local t = seg / SEGMENTS
+	for seg = 0, segments do
+		local t = seg / segments
 		local o = 1 - t
 		local px = ax * o * o + cx * 2 * t * o + bx * t * t
 		local py = ay * o * o + cy * 2 * t * o + by * t * t
@@ -245,47 +261,100 @@ local function Rebuild()
 	end
 end
 
-local bodyList = {}
+local frame = 0
+local lodLists = { {}, {}, {} }
+local candidates = {}
 
-local function BodyEdge(e)
+local function BodyEdge(e, sides, segments)
 	local a, b = e.a, e.b
 	local t = RealTime() * PULSE_RATE
 	local base = Radius(e)
 	local ra = base + BODY_R * math.sqrt(a.shown) * (1 + PULSE * math.sin(t + a.nid * PULSE_SPREAD))
 	local rb = base + BODY_R * math.sqrt(b.shown) * (1 + PULSE * math.sin(t + b.nid * PULSE_SPREAD))
 	local k = math.Clamp((a.shown + b.shown) / 8, 0, 1)
-	Tube(e, ra, rb, BODY_SIDES,
-		Lerp(k, BODY_THIN[1], BODY_THICK[1]), Lerp(k, BODY_THIN[2], BODY_THICK[2]), Lerp(k, BODY_THIN[3], BODY_THICK[3]))
+	Tube(e, ra, rb, sides,
+		Lerp(k, BODY_THIN[1], BODY_THICK[1]), Lerp(k, BODY_THIN[2], BODY_THICK[2]), Lerp(k, BODY_THIN[3], BODY_THICK[3]), segments)
 end
 
+local function Pick(node, M)
+	local b1, b2, b3, s1, s2, s3 = nil, nil, nil, -1, -1, -1
+	for _, e in ipairs(node.edges) do
+		local other = e.a == node and e.b or e.a
+		local score = (M.body[other] and other.shown or 0) + e.level * 0.05
+		if score > s1 then
+			b3, s3, b2, s2, b1, s1 = b2, s2, b1, s1, e, score
+		elseif score > s2 then
+			b3, s3, b2, s2 = b2, s2, e, score
+		elseif score > s3 then
+			b3, s3 = e, score
+		end
+	end
+	return b1, b2, b3
+end
+
+local function Queue(list, e)
+	if e and e.frame ~= frame then
+		e.frame = frame
+		list[#list + 1] = e
+	end
+end
+
+-- Only the heaviest parts of the body, only a few strands out of each, and less detail the further away it is.
 local function DrawBody(eye)
 	local M = EvilFungus.Client
 	local r2, n = DRAW_RANGE * DRAW_RANGE, 0
 	for node in pairs(M.body) do
-		if node.shown > BODY_GONE and node.pos:DistToSqr(eye) < r2 then
-			for _, e in ipairs(node.edges) do
-				local other = e.a == node and e.b or e.a
-				if not (M.body[other] and other.shown > BODY_GONE) or node.nid < other.nid then
-					n = n + 1
-					bodyList[n] = e
-				end
+		if node.shown > BODY_GONE then
+			local d2 = node.pos:DistToSqr(eye)
+			if d2 < r2 then
+				n = n + 1
+				candidates[n] = node
+				node.eyeDist = d2
 			end
 		end
 	end
-
-	for first = 1, n, BODY_BATCH do
-		local last = math.min(n, first + BODY_BATCH - 1)
-		mesh.Begin(MATERIAL_QUADS, (last - first + 1) * SEGMENTS * BODY_SIDES)
-		local ok, err = pcall(function()
-			for i = first, last do BodyEdge(bodyList[i]) end
-		end)
-		mesh.End()
-		if not ok then
-			ErrorNoHalt("Evil Fungus couldn't draw its body: ", err, "\n")
-			break
-		end
+	for i = #candidates, n + 1, -1 do candidates[i] = nil end
+	if n > BODY_NODES then
+		table.sort(candidates, function(a, b) return a.shown > b.shown end)
+		for i = n, BODY_NODES + 1, -1 do candidates[i] = nil end
+		n = BODY_NODES
 	end
-	for i = 1, n do bodyList[i] = nil end
+
+	frame = frame + 1
+	for i = 1, n do
+		local node = candidates[i]
+		local lod = #BODY_LOD
+		for l, band in ipairs(BODY_LOD) do
+			if node.eyeDist < band[1] * band[1] then
+				lod = l
+				break
+			end
+		end
+		local list = lodLists[lod]
+		local e1, e2, e3 = Pick(node, M)
+		Queue(list, e1)
+		Queue(list, e2)
+		Queue(list, e3)
+	end
+	M.bodyDrawn = 0
+
+	for l, list in ipairs(lodLists) do
+		local sides, segments = BODY_LOD[l][2], BODY_LOD[l][3]
+		M.bodyDrawn = M.bodyDrawn + #list
+		for first = 1, #list, BODY_BATCH do
+			local last = math.min(#list, first + BODY_BATCH - 1)
+			mesh.Begin(MATERIAL_QUADS, (last - first + 1) * segments * sides)
+			local ok, err = pcall(function()
+				for i = first, last do BodyEdge(list[i], sides, segments) end
+			end)
+			mesh.End()
+			if not ok then
+				ErrorNoHalt("Evil Fungus couldn't draw its body: ", err, "\n")
+				break
+			end
+		end
+		for i = #list, 1, -1 do list[i] = nil end
+	end
 end
 
 hook.Add("Think", "EvilFungusRender", function()
@@ -302,14 +371,37 @@ end)
 
 hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, sky, sky3d)
 	if depth or sky or sky3d then return end
+	local t = SysTime()
 	Rebuild()
+	t = EvilFungus.Measure("rebuild", t)
 
 	local eye = EyePos()
-	local r = DRAW_RANGE + 256
+	local r = DRAW_RANGE + 128
 	local r2 = r * r
 	render.SetMaterial(MAT)
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
 		if chunk.mesh and chunk.center:DistToSqr(eye) < r2 then chunk.mesh:Draw() end
 	end
+	t = EvilFungus.Measure("chunks", t)
 	DrawBody(eye)
+	EvilFungus.Measure("body", t)
+end)
+
+hook.Add("HUDPaint", "EvilFungusCost", function()
+	if not cv_cost:GetBool() then return end
+	local M, c = EvilFungus.Client, EvilFungus.Cost
+	local chunks, strands = 0, 0
+	for _, chunk in pairs(M.chunks) do
+		chunks = chunks + 1
+		strands = strands + chunk.count
+	end
+	local lines = {
+		("rebuilding mat  %.2f ms"):format(c.rebuild or 0),
+		("drawing mat     %.2f ms  (%d chunks, %d strands)"):format(c.chunks or 0, chunks, strands),
+		("drawing body    %.2f ms  (%d strands)"):format(c.body or 0, M.bodyDrawn or 0),
+		("sleepers        %.2f ms"):format(c.sleepers or 0),
+	}
+	for i, line in ipairs(lines) do
+		draw.SimpleText(line, "BudgetLabel", 24, 120 + i * 14, color_white)
+	end
 end)

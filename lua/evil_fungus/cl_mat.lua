@@ -10,18 +10,18 @@ end
 local M = { nodes = {}, edges = {}, chunks = {}, body = {} }
 EvilFungus.Client = M
 
-local CHUNK = 256
+local CHUNK = 128
 local LEVELS = 15
 local BODY_MAX_MASS = 8
-local GROWN = 0
-local THICKENED = 1
+local GROWN = 0.4
+local THICKENED = 2
 
 M.LEVELS = LEVELS
 
 local function ChunkFor(e)
 	local mid = (e.a.pos + e.b.pos) * 0.5
 	local ix, iy, iz = math.floor(mid.x / CHUNK), math.floor(mid.y / CHUNK), math.floor(mid.z / CHUNK)
-	local key = (ix + 64) * 16384 + (iy + 64) * 128 + (iz + 64)
+	local key = (ix + 128) * 65536 + (iy + 128) * 256 + (iz + 128)
 	local chunk = M.chunks[key]
 	if not chunk then
 		chunk = { key = key, edges = {}, count = 0, center = Vector((ix + 0.5) * CHUNK, (iy + 0.5) * CHUNK, (iz + 0.5) * CHUNK) }

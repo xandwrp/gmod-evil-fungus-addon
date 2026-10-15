@@ -377,6 +377,7 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 	if depth or sky or sky3d then return end
 	local S = EvilFungus.Strands
 	if not S then return end
+	local started = SysTime()
 	local now, clock = RealTime(), CurTime()
 	if clock >= nextScan then
 		nextScan = clock + SCAN
@@ -442,6 +443,7 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 		end
 	end
 	if #shapes > 0 then Draw(shapes, S) end
+	EvilFungus.Measure("sleepers", started)
 end)
 
 hook.Add("EntityRemoved", "EvilFungusSleepers", function(ent)
