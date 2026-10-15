@@ -15,7 +15,17 @@ EvilFungus.SETTINGS = {
 		help = "Players who've gone under can respawn before their rescue window closes" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
-	{ name = "max_nodes", default = 2500, min = 200, max = 8000, decimals = 0, label = "Mat size",
+	{ name = "aggression", default = 1, min = 0, max = 5, decimals = 2, label = "Aggression",
+		help = "How far off it feels footsteps, how long it keeps after someone and how fast it grows and flows at them. At 0 it never notices anyone" },
+	{ name = "grow_cost", default = 1, min = 0, max = 3, decimals = 2, label = "Growth cost",
+		help = "How much body each new strand costs. At 0 spreading is free and it never runs out" },
+	{ name = "sprawl", default = 1, min = 0, max = 5, decimals = 2, label = "Sprawl",
+		help = "How much it branches off at random instead of heading somewhere, and how much its paths wander" },
+	{ name = "spores", default = 1, min = 0, max = 10, decimals = 2, label = "Spores",
+		help = "How often a well-fed fungus throws spores that start new patches nearby. At 0 it never does" },
+	{ name = "time_scale", default = 1, min = 0.1, max = 20, decimals = 1, label = "Time scale",
+		help = "Runs the fungus faster or slower than the game: growth, flow, sensing, putting people under and consuming them" },
+	{ name = "max_nodes", default = 2500, min = 200, max = 15000, decimals = 0, label = "Mat size",
 		help = "Most strands all the fungus on the map can lay together before it stops spreading" },
 	{ name = "start_mass", default = 60, min = 10, max = 400, decimals = 0, label = "Starting body",
 		help = "How much body a fresh fungus has to spread with" },
@@ -34,6 +44,10 @@ end
 
 function EvilFungus.Setting(name)
 	return convars[name]:GetFloat()
+end
+
+function EvilFungus.TimeScale()
+	return convars.time_scale:GetFloat()
 end
 
 if CLIENT then return end

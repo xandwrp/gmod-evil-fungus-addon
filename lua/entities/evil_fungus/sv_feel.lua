@@ -80,7 +80,8 @@ end
 
 function ENT:Feel(now)
 	if now < self.NextFeel then return end
-	local dt = math.min(FEEL_INTERVAL * 3, now - (self.LastFeel or now))
+	local real = math.min(FEEL_INTERVAL * 3, now - (self.LastFeel or now))
+	local dt = real * EvilFungus.TimeScale()
 	self.LastFeel, self.NextFeel = now, now + FEEL_INTERVAL
 
 	local mat = self.Mat
@@ -128,7 +129,7 @@ function ENT:Feel(now)
 			self:Digest(ent, st.node, dt)
 		else
 			local speed = ent:GetVelocity():Length()
-			st.walked = st.walked + speed * dt
+			st.walked = st.walked + speed * real
 			if st.walked >= STEP_DISTANCE or now >= st.still then
 				st.walked, st.still = 0, now + STILL_STEP
 				self:Tremor(st.node, Strength(ent, speed), now, ent)
@@ -154,7 +155,8 @@ end
 -- A footstep runs out through the mat; whatever of the body it reaches feels it once the wave gets there.
 function ENT:Tremor(node, strength, now, ent)
 	local mat = self.Mat
-	local reach = WAVE_RANGE * strength
+	local reach = WAVE_RANGE * strength * EvilFungus.Setting("aggression")
+	if reach <= 0 then return end
 	local debugging = self:Debugging()
 	local nearest = math.huge
 	local dist = mat:Distances({ [node] = 0 }, function(e) return e.len end, reach, function(n, d)
@@ -163,7 +165,7 @@ function ENT:Tremor(node, strength, now, ent)
 	end)
 
 	if nearest < math.huge and #self.Pending < MAX_PENDING then
-		self.Pending[#self.Pending + 1] = { at = now + nearest / WAVE_SPEED, ent = ent, node = node }
+		self.Pending[#self.Pending + 1] = { at = now + nearest / (WAVE_SPEED * EvilFungus.TimeScale()), ent = ent, node = node }
 	end
 	if debugging then
 		self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = reach }

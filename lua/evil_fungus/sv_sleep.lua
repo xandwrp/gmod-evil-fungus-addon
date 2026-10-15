@@ -359,7 +359,7 @@ local function Consume(s)
 	s.consumeStart = CurTime()
 	s.schedule = Schedule(s.rag)
 	s.food = math.Clamp(Kilos(s.rag) * FOOD_PER_KG, FOOD_VALUE[1], FOOD_VALUE[2])
-	s.fed = 0
+	s.fed, s.progress, s.held = 0, 0, 0
 end
 
 local function Keep(s)
@@ -540,7 +540,8 @@ hook.Add("Tick", "EvilFungusSleep", function()
 end)
 
 local function Digest(s, now)
-	local k = math.Clamp((now - s.consumeStart) / math.max(1, EvilFungus.Setting("consume_time")), 0, 1)
+	s.progress = math.min(1, s.progress + CONSUME_UPDATE * EvilFungus.TimeScale() / math.max(1, EvilFungus.Setting("consume_time")))
+	local k = s.progress
 	local min = EvilFungus.MIN_SCALE
 	for _, b in ipairs(s.schedule) do
 		local scale = Lerp(math.Clamp((k - b.start) / SHRINK_SPAN, 0, 1), 1, min)
@@ -606,7 +607,7 @@ hook.Add("Think", "EvilFungusSleep", function()
 			if not IsValid(ent) then
 				Sleep.drowsy[ent] = nil
 			elseif now - (ent.EvilFungusDosedAt or 0) > DOSE_FRESH then
-				local d = ent.EvilFungusDrowsy - UPDATE / WEAR_OFF
+				local d = ent.EvilFungusDrowsy - UPDATE * EvilFungus.TimeScale() / WEAR_OFF
 				if d <= 0 then
 					d = 0
 					Sleep.drowsy[ent] = nil
@@ -616,6 +617,7 @@ hook.Add("Think", "EvilFungusSleep", function()
 		end
 
 		local rescue = EvilFungus.Setting("rescue_time")
+		local scale = EvilFungus.TimeScale()
 		for rag, s in pairs(Sleep.sleepers) do
 			if IsValid(rag) then
 				local owner = s.owner
@@ -626,7 +628,8 @@ hook.Add("Think", "EvilFungusSleep", function()
 						owner:SpectateEntity(rag)
 					end
 				end
-				if s.stage == CONSUMING and now - s.consumeStart >= rescue then
+				if s.stage == CONSUMING then s.held = s.held + UPDATE * scale end
+				if s.stage == CONSUMING and s.held >= rescue then
 					Keep(s)
 				elseif s.stage == FREED and now - s.stageAt >= WAKE_AFTER then
 					Wake(s)

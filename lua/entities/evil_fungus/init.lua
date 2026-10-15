@@ -34,10 +34,26 @@ local WEAVE_RATE = 6
 local WEAVE_RADIUS = 64
 local WEAVE_SPACING = 7
 local WEAVE_MAX = 140
+local DEBT_CAP = 3
+local SPROUTS_PER_TICK = 48
+local FLOW_SUBSTEPS = 4
+local MIN_DECIDE = 0.08
+local SPORE_BODY = 80
+local SPORE_SHARE = 0.3
+local SPORE_EVERY = 45
+local SPORE_RANGE = 1200
+local SPORE_CLEAR = 300
+local SPORE_TRIES = 4
+local MAX_COLONIES = 16
 
 local ai_disabled = GetConVar("ai_disabled")
 
 EvilFungus.Colonies = EvilFungus.Colonies or {}
+
+-- However fast it's told to run, the whole map only lays so many strands a tick.
+hook.Add("Tick", "EvilFungusSprouts", function()
+	EvilFungus.SproutsLeft = SPROUTS_PER_TICK
+end)
 
 -- Every strand on the map, all fungus together, since it's all one fungus.
 function EvilFungus.Strands()
@@ -80,7 +96,7 @@ function ENT:Initialize()
 		local node = mat:Grow(seed, right * math.cos(a) + side * math.sin(a), now)
 		if node then ring[#ring + 1] = node end
 	end
-	local share = EvilFungus.Setting("start_mass") / #ring
+	local share = (self.StartMass or EvilFungus.Setting("start_mass")) / #ring
 	for _, node in ipairs(ring) do mat:SetMass(node, share) end
 
 	self.Center, self.Up, self.Body = seed.pos, up, share * #ring
@@ -102,16 +118,19 @@ function ENT:Think()
 	if self.Absorbed then return end
 	if not (ai_disabled and ai_disabled:GetBool()) then
 		local t = SysTime()
+		local scale = EvilFungus.TimeScale()
 		if now >= self.NextDecide then
 			self:Decide(now)
-			self.NextDecide = now + DECIDE_INTERVAL
+			self.NextDecide = now + math.max(MIN_DECIDE, DECIDE_INTERVAL / scale)
 			t = self:Cost("decide", t)
 		end
-		local dt = FrameTime()
-		self:Flow(dt, now)
+		local dt = FrameTime() * scale
+		local steps = math.Clamp(math.ceil(scale), 1, FLOW_SUBSTEPS)
+		for _ = 1, steps do self:Flow(dt / steps, now) end
 		t = self:Cost("flow", t)
 		self:Spread(dt, now)
 		if self.Absorbed then return end
+		self:Spores(dt)
 		t = self:Cost("grow", t)
 		self:Feel(now)
 		self:Cost("feel", t)
@@ -202,7 +221,8 @@ function ENT:Decide(now)
 	self:Settle()
 
 	local prey, node = self.Prey, self.PreyNode
-	self.Hunting = IsValid(prey) and node and not node.dead and now - self.FeltAt < LOSE_TIME
+	local memory = LOSE_TIME * math.max(0.25, EvilFungus.Setting("aggression")) / EvilFungus.TimeScale()
+	self.Hunting = IsValid(prey) and node and not node.dead and now - self.FeltAt < memory
 		and self:Perceivable(prey)
 	if not self.Hunting then
 		self.Prey, self.PreyNode, self.Eating = nil, nil, nil
@@ -257,6 +277,7 @@ function ENT:Flow(dt, now)
 	end
 
 	local rate = FLOW * EvilFungus.Setting("flow_speed")
+	if self.Hunting then rate = rate * (0.5 + 0.5 * EvilFungus.Setting("aggression")) end
 	local spread = math.min(0.25, SPREAD * dt)
 	for i = 1, n do
 		local node = flowList[i]
@@ -309,10 +330,12 @@ end
 
 function ENT:Sprout(from, dir, now, spacing, payer)
 	payer = payer or from
-	if payer.m < GROW_COST then return end
+	local cost = GROW_COST * EvilFungus.Setting("grow_cost")
+	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
+	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
 	local node = self.Mat:Grow(from, dir, now, spacing)
 	if not node then return end
-	self.Mat:SetMass(payer, payer.m - GROW_COST)
+	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
 	local goal, target = self.Goal, self.Target
 	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
 		self.Goal = node
@@ -356,8 +379,11 @@ function ENT:Spread(dt, now)
 	local mat = self.Mat
 	if self.Body < MIN_BODY then return end
 	local speed = EvilFungus.Setting("grow_speed")
-	self.ReachDebt = math.min(3, self.ReachDebt + REACH_RATE * speed * dt)
-	self.SpreadDebt = math.min(3, self.SpreadDebt + SPREAD_RATE * speed * dt)
+	local sprawl = EvilFungus.Setting("sprawl")
+	local cap = math.min(SPROUTS_PER_TICK, DEBT_CAP * math.max(1, EvilFungus.TimeScale()))
+	local reach = REACH_RATE * (self.Hunting and EvilFungus.Setting("aggression") or 1)
+	self.ReachDebt = math.min(cap, self.ReachDebt + reach * speed * dt)
+	self.SpreadDebt = math.min(cap, self.SpreadDebt + SPREAD_RATE * sprawl * speed * dt)
 	if self.ReachDebt < 1 and self.SpreadDebt < 1 and not self.Tending then return end
 	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") then
 		self.ReachDebt, self.SpreadDebt, self.WeaveDebt = 0, 0, 0
@@ -375,7 +401,7 @@ function ENT:Spread(dt, now)
 			end
 		end
 		if best and bestD2 > ARRIVE * ARRIVE then
-			local dir = (target - best.pos):GetNormalized() + VectorRand() * REACH_JITTER
+			local dir = (target - best.pos):GetNormalized() + VectorRand() * (REACH_JITTER * (0.5 + 0.5 * sprawl))
 			self:Sprout(best, dir, now)
 			if self.Absorbed then return end
 		end
@@ -398,7 +424,8 @@ function ENT:Weave(dt, now, speed)
 		self.WeaveDebt = 0
 		return
 	end
-	self.WeaveDebt = math.min(3, self.WeaveDebt + WEAVE_RATE * speed * dt)
+	local cap = math.min(SPROUTS_PER_TICK, DEBT_CAP * math.max(1, EvilFungus.TimeScale()))
+	self.WeaveDebt = math.min(cap, self.WeaveDebt + WEAVE_RATE * speed * dt)
 	while self.WeaveDebt >= 1 do
 		self.WeaveDebt = self.WeaveDebt - 1
 		local near = {}
@@ -406,6 +433,58 @@ function ENT:Weave(dt, now, speed)
 		if #near >= WEAVE_MAX then return end
 		self:Sprout(near[math.random(#near)], VectorRand(), now, WEAVE_SPACING, s.nest)
 		if self.Absorbed then return end
+	end
+end
+
+local function Colonies()
+	local n = 0
+	for colony in pairs(EvilFungus.Colonies) do
+		if IsValid(colony) and not colony.Absorbed then n = n + 1 end
+	end
+	return n
+end
+
+local function Taken(pos)
+	for colony in pairs(EvilFungus.Colonies) do
+		if IsValid(colony) and colony.Mat and colony.Mat:Nearest(pos, SPORE_CLEAR) then return true end
+	end
+	return false
+end
+
+-- Fed well enough, it throws part of itself somewhere else to start over. Same fungus, so they find each other again.
+function ENT:Spores(dt)
+	local rate = EvilFungus.Setting("spores")
+	if rate <= 0 or self.Body < SPORE_BODY then
+		self.SporeDebt = 0
+		return
+	end
+	self.SporeDebt = (self.SporeDebt or 0) + dt * rate / SPORE_EVERY
+	if self.SporeDebt < 1 then return end
+	self.SporeDebt = 0
+	if Colonies() >= MAX_COLONIES or EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") * 0.9 then return end
+
+	local from = self.Center + self.Up * 24
+	for _ = 1, SPORE_TRIES do
+		local dir = VectorRand()
+		dir.z = math.abs(dir.z) * 0.5 + 0.2
+		dir:Normalize()
+		local tr = util.TraceLine({ start = from, endpos = from + dir * SPORE_RANGE, mask = MASK_SOLID_BRUSHONLY })
+		if tr.HitWorld and not tr.HitSky and not tr.HitNoDraw and not tr.StartSolid and tr.Fraction > 0.2 and not Taken(tr.HitPos) then
+			local spore = ents.Create("evil_fungus")
+			if not IsValid(spore) then return end
+			spore:SetPos(tr.HitPos + tr.HitNormal * 4)
+			spore.SpawnAt, spore.SpawnUp, spore.StartMass = tr.HitPos, tr.HitNormal, self.Body * SPORE_SHARE
+			spore:Spawn()
+			spore:Activate()
+			for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * (1 - SPORE_SHARE)) end
+
+			local fx = EffectData()
+			fx:SetStart(from)
+			fx:SetOrigin(tr.HitPos)
+			fx:SetNormal(tr.HitNormal)
+			util.Effect("evil_fungus_spore", fx, true, true)
+			return
+		end
 	end
 end
 

@@ -226,10 +226,11 @@ local function Wires(shapes, rag, c, nest, up, t, light, S)
 	local limbs = c.limbs
 	if #limbs == 0 then return end
 	local seed = rag:EntIndex()
-	local span = math.max(1, EvilFungus.Setting("consume_time"))
+	local consumed = rag:GetNW2Float(EvilFungus.CONSUMED_VAR, 0)
+	local span = math.max(1, EvilFungus.Setting("consume_time")) / EvilFungus.TimeScale()
 	for i = 1, WIRES do
-		local born = i <= WIRES_AT_ONCE and 0 or (i - WIRES_AT_ONCE) / (WIRES - WIRES_AT_ONCE) * span
-		local age = t - born
+		local age = t
+		if i > WIRES_AT_ONCE then age = (consumed - (i - WIRES_AT_ONCE) / (WIRES - WIRES_AT_ONCE)) * span end
 		if age <= 0 then break end
 		local limb = limbs[1 + math.floor(Rand(seed, i, 11) * #limbs)]
 		local a, b = rag:GetBonePosition(limb.parent), rag:GetBonePosition(limb.bone)
@@ -406,7 +407,7 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 				local close = d2 < FIBER_RANGE * FIBER_RANGE
 
 				if stage == KEPT then
-					local growing = t < EvilFungus.Setting("consume_time") + WIRE_GROW + 1
+					local growing = rag:GetNW2Float(EvilFungus.CONSUMED_VAR, 0) < 1 or t < WIRE_GROW + 1
 					if not rag.EvilFungusMesh or growing and clock - (rag.EvilFungusBakedAt or 0) > REBUILD then
 						local static = {}
 						Limbs(static, rag, c, up, light, S)
