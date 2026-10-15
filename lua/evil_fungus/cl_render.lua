@@ -16,7 +16,7 @@ local WIGGLE = 0.12
 local DRAW_RANGE = 6000
 local BUILD_BUDGET = 400
 local MAX_CHUNK_EDGES = 1500
-local BODY_BATCH = 200
+local BODY_BUDGET = 120
 local BODY_NODES = 500
 local BODY_LOD = { { 1200, 6, 2 }, { 3000, 4, 1 }, { math.huge, 3, 1 } }
 local BODY_R = 2.2
@@ -224,6 +224,10 @@ local function Build(chunk)
 	end
 	if chunk.count <= 0 then
 		EvilFungus.Client.chunks[chunk.key] = nil
+		if chunk.bodyMesh then
+			chunk.bodyMesh:Destroy()
+			chunk.bodyMesh = nil
+		end
 		return 0
 	end
 
@@ -262,8 +266,8 @@ local function Rebuild()
 end
 
 local frame = 0
-local lodLists = { {}, {}, {} }
 local candidates = {}
+local bodyChunks = {}
 
 local function BodyEdge(e, sides, segments)
 	local a, b = e.a, e.b
@@ -292,14 +296,56 @@ local function Pick(node, M)
 	return b1, b2, b3
 end
 
-local function Queue(list, e)
-	if e and e.frame ~= frame then
-		e.frame = frame
-		list[#list + 1] = e
+local function Queue(e)
+	if not e or e.frame == frame or not e.chunk then return 0 end
+	e.frame = frame
+	local chunk = e.chunk
+	if chunk.bodyFrame ~= frame then
+		chunk.bodyFrame = frame
+		local list = chunk.bodyEdges or {}
+		for i = #list, 1, -1 do list[i] = nil end
+		chunk.bodyEdges = list
+	end
+	chunk.bodyEdges[#chunk.bodyEdges + 1] = e
+	bodyChunks[chunk] = true
+	return 1
+end
+
+local function Lod(d2)
+	for _, band in ipairs(BODY_LOD) do
+		if d2 < band[1] * band[1] then return band[2], band[3] end
+	end
+	local last = BODY_LOD[#BODY_LOD]
+	return last[2], last[3]
+end
+
+local function ForgetBody(chunk)
+	if chunk.bodyMesh then
+		chunk.bodyMesh:Destroy()
+		chunk.bodyMesh = nil
 	end
 end
 
--- Only the heaviest parts of the body, only a few strands out of each, and less detail the further away it is.
+local function BakeBody(chunk, eye)
+	ForgetBody(chunk)
+	chunk.bodyBuilt = RealTime()
+	local list = chunk.bodyFrame == frame and chunk.bodyEdges
+	if not list or #list == 0 then return 0 end
+	local sides, segments = Lod(chunk.center:DistToSqr(eye))
+	local im = Mesh(MAT)
+	mesh.Begin(im, MATERIAL_QUADS, #list * sides * segments)
+	local ok, err = pcall(function()
+		for _, e in ipairs(list) do BodyEdge(e, sides, segments) end
+	end)
+	mesh.End()
+	if not ok then ErrorNoHalt("Evil Fungus couldn't build its body: ", err, "\n") end
+	chunk.bodyMesh = im
+	return #list
+end
+
+local order = {}
+
+-- The body is the only part that moves, so it's kept per chunk and a few chunks are rebuilt each frame, stalest first.
 local function DrawBody(eye)
 	local M = EvilFungus.Client
 	local r2, n = DRAW_RANGE * DRAW_RANGE, 0
@@ -309,7 +355,6 @@ local function DrawBody(eye)
 			if d2 < r2 then
 				n = n + 1
 				candidates[n] = node
-				node.eyeDist = d2
 			end
 		end
 	end
@@ -321,39 +366,34 @@ local function DrawBody(eye)
 	end
 
 	frame = frame + 1
+	local queued = 0
 	for i = 1, n do
-		local node = candidates[i]
-		local lod = #BODY_LOD
-		for l, band in ipairs(BODY_LOD) do
-			if node.eyeDist < band[1] * band[1] then
-				lod = l
-				break
-			end
-		end
-		local list = lodLists[lod]
-		local e1, e2, e3 = Pick(node, M)
-		Queue(list, e1)
-		Queue(list, e2)
-		Queue(list, e3)
+		local e1, e2, e3 = Pick(candidates[i], M)
+		queued = queued + Queue(e1) + Queue(e2) + Queue(e3)
 	end
-	M.bodyDrawn = 0
+	M.bodyDrawn = queued
 
-	for l, list in ipairs(lodLists) do
-		local sides, segments = BODY_LOD[l][2], BODY_LOD[l][3]
-		M.bodyDrawn = M.bodyDrawn + #list
-		for first = 1, #list, BODY_BATCH do
-			local last = math.min(#list, first + BODY_BATCH - 1)
-			mesh.Begin(MATERIAL_QUADS, (last - first + 1) * segments * sides)
-			local ok, err = pcall(function()
-				for i = first, last do BodyEdge(list[i], sides, segments) end
-			end)
-			mesh.End()
-			if not ok then
-				ErrorNoHalt("Evil Fungus couldn't draw its body: ", err, "\n")
-				break
-			end
+	local count = 0
+	for chunk in pairs(bodyChunks) do
+		if chunk.bodyFrame ~= frame then
+			ForgetBody(chunk)
+			bodyChunks[chunk] = nil
+		else
+			count = count + 1
+			order[count] = chunk
 		end
-		for i = #list, 1, -1 do list[i] = nil end
+	end
+	for i = #order, count + 1, -1 do order[i] = nil end
+	table.sort(order, function(a, b) return (a.bodyBuilt or -1) < (b.bodyBuilt or -1) end)
+
+	local budget = BODY_BUDGET
+	for i = 1, count do
+		if budget <= 0 then break end
+		budget = budget - BakeBody(order[i], eye)
+	end
+
+	for chunk in pairs(bodyChunks) do
+		if chunk.bodyMesh then chunk.bodyMesh:Draw() end
 	end
 end
 

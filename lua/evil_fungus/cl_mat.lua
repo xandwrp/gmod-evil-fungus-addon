@@ -4,6 +4,8 @@ local old = EvilFungus.Client
 if old then
 	for _, chunk in pairs(old.chunks) do
 		if chunk.mesh then chunk.mesh:Destroy() end
+		if chunk.bodyMesh then chunk.bodyMesh:Destroy() end
+		chunk.mesh, chunk.bodyMesh, chunk.count = nil, nil, 0
 	end
 end
 
