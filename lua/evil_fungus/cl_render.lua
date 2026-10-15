@@ -1,8 +1,19 @@
-local MAT = CreateMaterial("evil_fungus_strand", "UnlitGeneric", {
-	["$basetexture"] = "vgui/white",
-	["$vertexcolor"] = 1,
-	["$nocull"] = 1,
-})
+-- Lighting is baked into vertex colours; the cubemap on top, masked by the texture's alpha, is the grease.
+local function Skin(name, texture, sheen)
+	return CreateMaterial(name, "UnlitGeneric", {
+		["$basetexture"] = texture,
+		["$vertexcolor"] = 1,
+		["$nocull"] = 1,
+		["$envmap"] = "env_cubemap",
+		["$basealphaenvmapmask"] = 1,
+		["$envmaptint"] = sheen,
+		["$envmapcontrast"] = 1,
+		["$envmapsaturation"] = 0.4,
+	})
+end
+
+local MAT = Skin("evil_fungus_fiber", "evil_fungus/fiber", "[.3 .28 .24]")
+local FLESH = Skin("evil_fungus_flesh", "evil_fungus/flesh", "[.75 .7 .72]")
 
 local LEVELS = 15
 local SEGMENTS = 2
@@ -24,6 +35,7 @@ local BODY_SHOW = 6
 local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
+local TEX_STRETCH = 1.4
 
 local COST_SMOOTH = 0.05
 local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
@@ -38,10 +50,10 @@ function EvilFungus.Measure(name, since)
 	return t
 end
 
-local ROOT = { 165, 155, 135 }
-local VEIN = { 205, 180, 115 }
-local BODY_THIN = { 205, 150, 80 }
-local BODY_THICK = { 160, 75, 40 }
+local ROOT = { 175, 165, 150 }
+local VEIN = { 200, 175, 140 }
+local BODY_THIN = { 200, 185, 180 }
+local BODY_THICK = { 140, 95, 105 }
 
 local function Hash(i)
 	local x = math.sin(i * 12.9898) * 43758.5453
@@ -55,6 +67,20 @@ local function Light(node)
 	l = math.min(1.5, 0.1 + math.sqrt((c.x + c.y + c.z) / 3) * 1.25)
 	node.light = l
 	return l
+end
+
+-- Meshes built before a reload may be in another vertex format, so everything is rebuilt.
+for _, chunk in pairs(EvilFungus.Client and EvilFungus.Client.chunks or {}) do
+	if chunk.mesh then chunk.mesh:Destroy() end
+	if chunk.bodyMesh then chunk.bodyMesh:Destroy() end
+	chunk.mesh, chunk.bodyMesh, chunk.bodyBuilt = nil, nil, nil
+	EvilFungus.Client.Stale(chunk, 0)
+end
+for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
+	if rag.EvilFungusMesh then
+		rag.EvilFungusMesh:Destroy()
+		rag.EvilFungusMesh = nil
+	end
 end
 
 local trig = {}
@@ -71,15 +97,45 @@ local function Trig(sides)
 	return t
 end
 
-local scratch = Vector()
+local scratch, scratchN = Vector(), Vector()
 local rx, ry, rz, rs = { {}, {} }, { {}, {} }, { {}, {} }, { {}, {} }
+local nx, ny, nz, rv = { {}, {} }, { {}, {} }, { {}, {} }, {}
 
-local function Vert(ring, k, cr, cg, cb)
+local function Vert(ring, k, u, cr, cg, cb)
 	scratch:SetUnpacked(rx[ring][k], ry[ring][k], rz[ring][k])
 	mesh.Position(scratch)
+	scratchN:SetUnpacked(nx[ring][k], ny[ring][k], nz[ring][k])
+	mesh.Normal(scratchN)
+	mesh.TexCoord(0, u, rv[ring])
 	local s = rs[ring][k]
 	mesh.Color(math.min(255, cr * s), math.min(255, cg * s), math.min(255, cb * s), 255)
 	mesh.AdvanceVertex()
+end
+
+-- The texture wraps once around a strand and repeats along it once per circumference, so wrinkles keep their shape on thick and thin.
+local function Quads(prev, ring, sides, cr, cg, cb)
+	for k = 0, sides - 1 do
+		local u, u2 = k / sides, (k + 1) / sides
+		local k2 = (k + 1) % sides
+		Vert(prev, k, u, cr, cg, cb)
+		Vert(prev, k2, u2, cr, cg, cb)
+		Vert(ring, k2, u2, cr, cg, cb)
+		Vert(ring, k, u, cr, cg, cb)
+	end
+end
+
+local function Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, r, light, tr, sides)
+	local X, Y, Z, S = rx[ring], ry[ring], rz[ring], rs[ring]
+	local NX, NY, NZ = nx[ring], ny[ring], nz[ring]
+	for k = 0, sides - 1 do
+		local c, s = tr.c[k], tr.s[k]
+		local ox, oy, oz = vx * c + wx * s, vy * c + wy * s, vz * c + wz * s
+		NX[k], NY[k], NZ[k] = ox, oy, oz
+		X[k] = px + ox * r
+		Y[k] = py + oy * r
+		Z[k] = pz + oz * r
+		S[k] = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
+	end
 end
 
 -- One strand as a short tube bowed around corners and wavering a little, radius ra at its old end and rb at its new one.
@@ -109,6 +165,8 @@ local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
 	local cz = (az + bz) * 0.5 + uz * bend + sz * wig
 
 	local tr = Trig(sides)
+	local vScale = 1 / (math.pi * (ra + rb) * TEX_STRETCH)
+	local v, lx, ly, lz = Hash(e.eid + 3), ax, ay, az
 	for seg = 0, segments do
 		local t = seg / segments
 		local o = 1 - t
@@ -135,28 +193,12 @@ local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
 		vx, vy, vz = vx / vl, vy / vl, vz / vl
 		local wx, wy, wz = ty * vz - tz * vy, tz * vx - tx * vz, tx * vy - ty * vx
 
-		local r = ra * o + rb * t
-		local light = la * o + lb * t
 		local ring = seg % 2 + 1
-		local X, Y, Z, S = rx[ring], ry[ring], rz[ring], rs[ring]
-		for k = 0, sides - 1 do
-			local c, s = tr.c[k], tr.s[k]
-			X[k] = px + (vx * c + wx * s) * r
-			Y[k] = py + (vy * c + wy * s) * r
-			Z[k] = pz + (vz * c + wz * s) * r
-			S[k] = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
-		end
-
-		if seg > 0 then
-			local prev = 3 - ring
-			for k = 0, sides - 1 do
-				local k2 = (k + 1) % sides
-				Vert(prev, k, cr, cg, cb)
-				Vert(prev, k2, cr, cg, cb)
-				Vert(ring, k2, cr, cg, cb)
-				Vert(ring, k, cr, cg, cb)
-			end
-		end
+		v = v + math.sqrt((px - lx) ^ 2 + (py - ly) ^ 2 + (pz - lz) ^ 2) * vScale
+		lx, ly, lz = px, py, pz
+		rv[ring] = v
+		Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, ra * o + rb * t, la * o + lb * t, tr, sides)
+		if seg > 0 then Quads(3 - ring, ring, sides, cr, cg, cb) end
 	end
 end
 
@@ -164,6 +206,10 @@ end
 local function Polyline(pts, radii, up, sides, cr, cg, cb, light)
 	local tr = Trig(sides)
 	local n = #pts
+	local rsum = 0
+	for i = 1, n do rsum = rsum + radii[i] end
+	local vScale = 1 / (2 * math.pi * math.max(0.25, rsum / n) * TEX_STRETCH)
+	local v = 0
 	for i = 1, n do
 		local p, q = pts[math.max(1, i - 1)], pts[math.min(n, i + 1)]
 		local tx, ty, tz = q.x - p.x, q.y - p.y, q.z - p.z
@@ -184,32 +230,17 @@ local function Polyline(pts, radii, up, sides, cr, cg, cb, light)
 		vx, vy, vz = vx / vl, vy / vl, vz / vl
 		local wx, wy, wz = ty * vz - tz * vy, tz * vx - tx * vz, tx * vy - ty * vx
 
-		local pt, r = pts[i], radii[i]
+		local pt = pts[i]
 		local ring = i % 2 + 1
-		local X, Y, Z, S = rx[ring], ry[ring], rz[ring], rs[ring]
-		for k = 0, sides - 1 do
-			local c, s = tr.c[k], tr.s[k]
-			X[k] = pt.x + (vx * c + wx * s) * r
-			Y[k] = pt.y + (vy * c + wy * s) * r
-			Z[k] = pt.z + (vz * c + wz * s) * r
-			S[k] = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
-		end
-
-		if i > 1 then
-			local prev = 3 - ring
-			for k = 0, sides - 1 do
-				local k2 = (k + 1) % sides
-				Vert(prev, k, cr, cg, cb)
-				Vert(prev, k2, cr, cg, cb)
-				Vert(ring, k2, cr, cg, cb)
-				Vert(ring, k, cr, cg, cb)
-			end
-		end
+		if i > 1 then v = v + pt:Distance(pts[i - 1]) * vScale end
+		rv[ring] = v
+		Ring(ring, pt.x, pt.y, pt.z, vx, vy, vz, wx, wy, wz, radii[i], light, tr, sides)
+		if i > 1 then Quads(3 - ring, ring, sides, cr, cg, cb) end
 	end
 end
 
 EvilFungus.Strands = {
-	Polyline = Polyline, Light = Light, MAT = MAT,
+	Polyline = Polyline, Light = Light, MAT = MAT, FLESH = FLESH,
 	ROOT = ROOT, VEIN = VEIN, BODY_THIN = BODY_THIN, BODY_THICK = BODY_THICK,
 }
 
@@ -332,7 +363,7 @@ local function BakeBody(chunk, eye)
 	local list = chunk.bodyFrame == frame and chunk.bodyEdges
 	if not list or #list == 0 then return 0 end
 	local sides, segments = Lod(chunk.center:DistToSqr(eye))
-	local im = Mesh(MAT)
+	local im = Mesh(FLESH)
 	mesh.Begin(im, MATERIAL_QUADS, #list * sides * segments)
 	local ok, err = pcall(function()
 		for _, e in ipairs(list) do BodyEdge(e, sides, segments) end
@@ -392,6 +423,7 @@ local function DrawBody(eye)
 		budget = budget - BakeBody(order[i], eye)
 	end
 
+	render.SetMaterial(FLESH)
 	for chunk in pairs(bodyChunks) do
 		if chunk.bodyMesh then chunk.bodyMesh:Draw() end
 	end

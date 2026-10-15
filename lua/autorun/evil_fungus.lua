@@ -14,6 +14,8 @@ if CLIENT then
 	include("evil_fungus/cl_dream.lua")
 	include("evil_fungus/cl_sleepers.lua")
 else
+	resource.AddFile("materials/evil_fungus/flesh.vtf")
+	resource.AddFile("materials/evil_fungus/fiber.vtf")
 	include("evil_fungus/sv_creatures.lua")
 	include("evil_fungus/sv_net.lua")
 	include("evil_fungus/sv_sleep.lua")
