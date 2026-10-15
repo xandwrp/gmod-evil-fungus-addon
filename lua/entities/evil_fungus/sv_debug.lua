@@ -63,7 +63,7 @@ function ENT:DebugDraw(now)
 	if self.Hunting and IsValid(self.Prey) then
 		debugoverlay.Line(self.Center, self.Prey:GetPos(), life, PREY, true)
 	end
-	local state = self.Eating and "feeding" or self.Hunting and "hunting" or self.Resting and "resting" or "roaming"
+	local state = self.Eating and "feeding" or self.Hunting and "hunting" or self.Tending and "tending" or self.Resting and "resting" or "roaming"
 	local at, r = self.Center + self.Up * 24, self.CostReport
 	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d"):format(state, self.Body, mat.count), life, TARGET)
 	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  feel %.2f"):format(

@@ -487,6 +487,8 @@ function Sleep.Hold(rag, owner, fungus, s)
 		s.size = math.Clamp(GripPos(s, "head"):Distance(GripPos(s, "pelvis")) / REST_TORSO, 0.5, 2)
 	end
 	s.carry = rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
+	s.since = CurTime()
+	rag:SetNW2Float(EvilFungus.SINCE_VAR, s.since)
 	Sleep.sleepers[rag] = s
 	SetStage(s, POSING)
 	if IsValid(fungus) then fungus:Claim(rag) end

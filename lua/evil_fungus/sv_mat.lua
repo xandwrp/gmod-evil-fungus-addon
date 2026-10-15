@@ -195,9 +195,9 @@ function Mat.Reaches(a, b)
 	return not util.TraceLine({ start = a.pos + a.normal * LIFT, endpos = b.pos + b.normal * LIFT, mask = MASK }).Hit
 end
 
-function Mat:Crowded(pos, normal)
+function Mat:Crowded(pos, normal, spacing)
 	local crowded = false
-	self:Near(pos, SPACING, function(node)
+	self:Near(pos, spacing or SPACING, function(node)
 		if node.normal:Dot(normal) > 0.3 then
 			crowded = true
 			return false
@@ -206,9 +206,9 @@ function Mat:Crowded(pos, normal)
 	return crowded
 end
 
-function Mat:Grow(from, dir, now)
-	local pos, normal = self:Walk(from, dir)
-	if not pos or self:Crowded(pos, normal) then return end
+function Mat:Grow(from, dir, now, spacing)
+	local pos, normal = self:Walk(from, dir, spacing and spacing * 1.5)
+	if not pos or self:Crowded(pos, normal, spacing) then return end
 	if bit.band(util.PointContents(pos + normal * 2), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
 
 	local node = self:Add(pos, normal)

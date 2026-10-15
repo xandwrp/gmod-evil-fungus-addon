@@ -30,6 +30,10 @@ local ARRIVE = 32
 local REST_TIME = { 2, 5 }
 local LOSE_TIME = 8
 local NEAR_GOAL = 96
+local WEAVE_RATE = 6
+local WEAVE_RADIUS = 64
+local WEAVE_SPACING = 7
+local WEAVE_MAX = 140
 
 local ai_disabled = GetConVar("ai_disabled")
 
@@ -80,7 +84,7 @@ function ENT:Initialize()
 	for _, node in ipairs(ring) do mat:SetMass(node, share) end
 
 	self.Center, self.Up, self.Body = seed.pos, up, share * #ring
-	self.ReachDebt, self.SpreadDebt = 0, 0
+	self.ReachDebt, self.SpreadDebt, self.WeaveDebt = 0, 0, 0
 	self.NextDecide = 0
 	self.TargetUntil = 0
 	self.Claimed = {}
@@ -205,9 +209,14 @@ function ENT:Decide(now)
 	end
 
 	local goal
+	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
 		goal = node
 		self.Target = self:Touches(prey) and prey:GetPos() or node.pos
+	elseif self.Tending then
+		goal = self.Tending.nest
+		self.Target = goal.pos
+		self.GoalStale = true
 	else
 		if not self.Target or now >= self.TargetUntil then self:PickTarget(now) end
 		goal = self.Goal
@@ -285,10 +294,25 @@ local function Frontier(node)
 	return node.m > GROW_MASS
 end
 
-function ENT:Sprout(from, dir, now)
-	local node = self.Mat:Grow(from, dir, now)
+-- The newest catch still being laid out or still within reach of rescue. The body goes and sits with it.
+function ENT:Patient()
+	local best
+	for rag in pairs(self.Claimed) do
+		local s = EvilFungus.Sleepers[rag]
+		if s and s.nest and not s.nest.dead and (s.stage == EvilFungus.POSING or s.stage == EvilFungus.CONSUMING)
+			and (not best or s.since > best.since) then
+			best = s
+		end
+	end
+	return best
+end
+
+function ENT:Sprout(from, dir, now, spacing, payer)
+	payer = payer or from
+	if payer.m < GROW_COST then return end
+	local node = self.Mat:Grow(from, dir, now, spacing)
 	if not node then return end
-	self.Mat:SetMass(from, from.m - GROW_COST)
+	self.Mat:SetMass(payer, payer.m - GROW_COST)
 	local goal, target = self.Goal, self.Target
 	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
 		self.Goal = node
@@ -334,9 +358,9 @@ function ENT:Spread(dt, now)
 	local speed = EvilFungus.Setting("grow_speed")
 	self.ReachDebt = math.min(3, self.ReachDebt + REACH_RATE * speed * dt)
 	self.SpreadDebt = math.min(3, self.SpreadDebt + SPREAD_RATE * speed * dt)
-	if self.ReachDebt < 1 and self.SpreadDebt < 1 then return end
+	if self.ReachDebt < 1 and self.SpreadDebt < 1 and not self.Tending then return end
 	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") then
-		self.ReachDebt, self.SpreadDebt = 0, 0
+		self.ReachDebt, self.SpreadDebt, self.WeaveDebt = 0, 0, 0
 		return
 	end
 
@@ -361,6 +385,26 @@ function ENT:Spread(dt, now)
 		self.SpreadDebt = self.SpreadDebt - 1
 		local from = RandomNode(mat.full, Frontier)
 		if from then self:Sprout(from, VectorRand(), now) end
+		if self.Absorbed then return end
+	end
+
+	self:Weave(dt, now, speed)
+end
+
+-- Around a fresh catch the mat knits itself much tighter than anywhere else.
+function ENT:Weave(dt, now, speed)
+	local s = self.Tending
+	if not s then
+		self.WeaveDebt = 0
+		return
+	end
+	self.WeaveDebt = math.min(3, self.WeaveDebt + WEAVE_RATE * speed * dt)
+	while self.WeaveDebt >= 1 do
+		self.WeaveDebt = self.WeaveDebt - 1
+		local near = {}
+		self.Mat:Near(s.nest.pos, WEAVE_RADIUS, function(node) near[#near + 1] = node end)
+		if #near >= WEAVE_MAX then return end
+		self:Sprout(near[math.random(#near)], VectorRand(), now, WEAVE_SPACING, s.nest)
 		if self.Absorbed then return end
 	end
 end
