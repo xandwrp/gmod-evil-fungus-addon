@@ -7,6 +7,8 @@ EvilFungus.SETTINGS = {
 		help = "People and animals standing on the mat are food. Anything that doesn't bleed never is" },
 	{ name = "sleep_time", default = 4, min = 0.5, max = 30, decimals = 1, label = "Sleep time",
 		help = "Seconds with its body on you before you go under" },
+	{ name = "grip", default = 0.85, min = 0, max = 1, decimals = 2, label = "Grip",
+		help = "How much it slows anyone walking through it where it's thickest. At 1 they can't move" },
 	{ name = "consume_time", default = 300, min = 10, max = 1800, decimals = 0, label = "Consume time",
 		help = "Seconds it takes to replace a sleeper with itself, everything but the head" },
 	{ name = "rescue_time", default = 60, min = 0, max = 600, decimals = 0, label = "Rescue window",
@@ -17,6 +19,8 @@ EvilFungus.SETTINGS = {
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
 	{ name = "aggression", default = 1, min = 0, max = 5, decimals = 2, label = "Aggression",
 		help = "How far off it feels footsteps, how long it keeps after someone and how fast it grows and flows at them. At 0 it never notices anyone" },
+	{ name = "smell", default = 0, min = 0, max = 4000, decimals = 0, label = "Smell",
+		help = "How far off the mat it smells people and animals breathing and goes for where they are. Running and being hurt carry further, walls stop it. At 0 it only feels what walks on it" },
 	{ name = "grow_cost", default = 1, min = 0, max = 3, decimals = 2, label = "Growth cost",
 		help = "How much body each new strand costs. At 0 spreading is free and it never runs out" },
 	{ name = "sprawl", default = 1, min = 0, max = 5, decimals = 2, label = "Sprawl",
@@ -34,6 +38,7 @@ EvilFungus.SETTINGS = {
 	{ name = "flow_speed", default = 1, min = 0.1, max = 5, decimals = 2, label = "Flow speed",
 		help = "How fast its body moves through the mat it already has" },
 }
+
 
 local convars, byConVar = {}, {}
 for _, s in ipairs(EvilFungus.SETTINGS) do
@@ -60,3 +65,4 @@ net.Receive("EvilFungusSetting", function(_, ply)
 	if not s or not value or not IsValid(ply) or not ply:IsSuperAdmin() then return end
 	RunConsoleCommand(s.convar, tostring(math.Clamp(value, s.min, s.max)))
 end)
+

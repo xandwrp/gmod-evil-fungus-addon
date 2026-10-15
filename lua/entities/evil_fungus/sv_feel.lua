@@ -11,7 +11,6 @@ local STILL_SPEED = 5
 local FEEL_MASS = 0.3
 local GRIP_RADIUS = 48
 local DRAG_MASS = { 1, 8 }
-local DRAG_MAX = 0.85
 local GRAB_MASS = 2.5
 local DOSE_MASS = 4
 local SLEEPER_RADIUS = 56
@@ -27,6 +26,9 @@ local DIGEST_GAIN = 0.8
 local LANDING = { 0.3, 1.2 }
 local LANDING_KG = 100
 local ROT = { 70, 55, 40 }
+local SMELL_INTERVAL = 0.5
+local HURT_SMELL = 1
+local SMELL_KEEP = 0.5
 
 ENT.WAVE_SPEED = WAVE_SPEED
 
@@ -37,6 +39,7 @@ local Creature = EvilFungus.Creature
 function ENT:InitFeel()
 	self.Touching, self.Pending, self.Waves, self.Dragged = {}, {}, {}, {}
 	self.NextFeel, self.FeltAt = 0, -math.huge
+	self.NextSmell, self.Smelled = 0, nil
 end
 
 function ENT:Perceivable(ent)
@@ -123,6 +126,7 @@ function ENT:Feel(now)
 	end
 	self.Touching = touching
 	self:Breathe(dt)
+	self:Smell(now)
 
 	for ent, st in pairs(touching) do
 		if st.food then
@@ -172,6 +176,51 @@ function ENT:Tremor(node, strength, now, ent)
 	end
 end
 
+local function Hurt(ent)
+	local max = ent:GetMaxHealth()
+	if max <= 0 then return 1 end
+	return 1 + HURT_SMELL * math.Clamp(1 - ent:Health() / max, 0, 1)
+end
+
+-- Breathers off the mat leave something on the air. Close enough, with open air between, it knows where they are.
+function ENT:Smell(now)
+	local range = EvilFungus.Setting("smell")
+	if range <= 0 then
+		self.Smelled = nil
+		return
+	end
+	if now < self.NextSmell or not self.Mat.mins then return end
+	self.NextSmell = now + SMELL_INTERVAL
+	self.Smelled = nil
+	local prey = self.Prey
+	if IsValid(prey) and (self.Eating or self:Touches(prey)) then return end
+
+	local mins, maxs = self.Mat.mins, self.Mat.maxs
+	local best, bestNode, bestScore
+	local function Sniff(ent)
+		if self.Touching[ent] or not self:Perceivable(ent) then return end
+		local reach = range * Strength(ent, ent:GetVelocity():Length()) * Hurt(ent)
+		local breath = ent:EyePos()
+		local box = Vector(math.Clamp(breath.x, mins.x, maxs.x), math.Clamp(breath.y, mins.y, maxs.y), math.Clamp(breath.z, mins.z, maxs.z))
+		if box:DistToSqr(breath) > reach * reach then return end
+		local node = self:Closest(breath)
+		if not node then return end
+		local d = node.pos:Distance(breath)
+		if d > reach then return end
+		if util.TraceLine({ start = breath, endpos = node.pos + node.normal * 4, mask = MASK_SOLID_BRUSHONLY }).Hit then return end
+		local score = d / reach * (ent == prey and SMELL_KEEP or 1)
+		if not bestScore or score < bestScore then best, bestNode, bestScore = ent, node, score end
+	end
+	for _, ply in ipairs(player.GetAll()) do Sniff(ply) end
+	for ent in pairs(EvilFungus.Creatures) do
+		if IsValid(ent) then Sniff(ent) end
+	end
+	if not best then return end
+
+	if best ~= prey then self.NextDecide = 0 end
+	self.Prey, self.PreyNode, self.FeltAt, self.Smelled = best, bestNode, now, best
+end
+
 function ENT:Ripple(node, now)
 	if not self:Debugging() then return end
 	local dist = self.Mat:Distances({ [node] = 0 }, function(e) return e.len end, RIPPLE_RANGE)
@@ -207,7 +256,7 @@ function ENT:Feed(ent, node, dt)
 	mat:Near(ent:GetPos(), GRIP_RADIUS, function(n) m = m + n.m end)
 
 	if ent:IsPlayer() then
-		local drag = math.Clamp((m - DRAG_MASS[1]) / (DRAG_MASS[2] - DRAG_MASS[1]), 0, 1) * DRAG_MAX
+		local drag = math.Clamp((m - DRAG_MASS[1]) / (DRAG_MASS[2] - DRAG_MASS[1]), 0, 1) * EvilFungus.Setting("grip")
 		ent:SetNW2Float(EvilFungus.DRAG_VAR, drag)
 		self.Dragged[ent] = drag > 0 or nil
 	end

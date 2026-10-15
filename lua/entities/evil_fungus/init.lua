@@ -232,7 +232,7 @@ function ENT:Decide(now)
 	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
 		goal = node
-		self.Target = self:Touches(prey) and prey:GetPos() or node.pos
+		self.Target = (self:Touches(prey) or self.Smelled == prey) and prey:GetPos() or node.pos
 	elseif self.Tending then
 		goal = self.Tending.nest
 		self.Target = goal.pos
@@ -451,7 +451,27 @@ local function Taken(pos)
 	return false
 end
 
+function ENT:Throw(from, dir)
+	local tr = util.TraceLine({ start = from, endpos = from + dir * SPORE_RANGE, mask = MASK_SOLID_BRUSHONLY })
+	if not tr.HitWorld or tr.HitSky or tr.HitNoDraw or tr.StartSolid or tr.Fraction <= 0.2 or Taken(tr.HitPos) then return false end
+	local spore = ents.Create("evil_fungus")
+	if not IsValid(spore) then return true end
+	spore:SetPos(tr.HitPos + tr.HitNormal * 4)
+	spore.SpawnAt, spore.SpawnUp, spore.StartMass = tr.HitPos, tr.HitNormal, self.Body * SPORE_SHARE
+	spore:Spawn()
+	spore:Activate()
+	for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * (1 - SPORE_SHARE)) end
+
+	local fx = EffectData()
+	fx:SetStart(from)
+	fx:SetOrigin(tr.HitPos)
+	fx:SetNormal(tr.HitNormal)
+	util.Effect("evil_fungus_spore", fx, true, true)
+	return true
+end
+
 -- Fed well enough, it throws part of itself somewhere else to start over. Same fungus, so they find each other again.
+-- Whoever it can smell getting away gets one at their feet.
 function ENT:Spores(dt)
 	local rate = EvilFungus.Setting("spores")
 	if rate <= 0 or self.Body < SPORE_BODY then
@@ -464,27 +484,16 @@ function ENT:Spores(dt)
 	if Colonies() >= MAX_COLONIES or EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") * 0.9 then return end
 
 	local from = self.Center + self.Up * 24
+	local prey = self.Hunting and self.Smelled == self.Prey and self.Prey
+	if IsValid(prey) and from:DistToSqr(prey:GetPos()) < SPORE_RANGE * SPORE_RANGE
+		and self:Throw(from, (prey:GetPos() - from):GetNormalized()) then
+		return
+	end
 	for _ = 1, SPORE_TRIES do
 		local dir = VectorRand()
 		dir.z = math.abs(dir.z) * 0.5 + 0.2
 		dir:Normalize()
-		local tr = util.TraceLine({ start = from, endpos = from + dir * SPORE_RANGE, mask = MASK_SOLID_BRUSHONLY })
-		if tr.HitWorld and not tr.HitSky and not tr.HitNoDraw and not tr.StartSolid and tr.Fraction > 0.2 and not Taken(tr.HitPos) then
-			local spore = ents.Create("evil_fungus")
-			if not IsValid(spore) then return end
-			spore:SetPos(tr.HitPos + tr.HitNormal * 4)
-			spore.SpawnAt, spore.SpawnUp, spore.StartMass = tr.HitPos, tr.HitNormal, self.Body * SPORE_SHARE
-			spore:Spawn()
-			spore:Activate()
-			for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * (1 - SPORE_SHARE)) end
-
-			local fx = EffectData()
-			fx:SetStart(from)
-			fx:SetOrigin(tr.HitPos)
-			fx:SetNormal(tr.HitNormal)
-			util.Effect("evil_fungus_spore", fx, true, true)
-			return
-		end
+		if self:Throw(from, dir) then return end
 	end
 end
 
