@@ -22,7 +22,30 @@ local function Admin(control)
 	if control:IsEnabled() ~= admin then control:SetEnabled(admin) end
 end
 
+local function Presets(panel)
+	local row = vgui.Create("DPanel", panel)
+	row:SetPaintBackground(false)
+	row:SetTall(24)
+	for _, preset in ipairs(EvilFungus.PRESETS) do
+		local button = row:Add("DButton")
+		button:SetText(preset.label)
+		button.DoClick = function() RunConsoleCommand("evil_fungus_preset", preset.name) end
+		button.Think = Admin
+	end
+	row.PerformLayout = function(self, w)
+		local buttons = self:GetChildren()
+		local gap = 4
+		local bw = (w - gap * (#buttons - 1)) / #buttons
+		for i, button in ipairs(buttons) do
+			button:SetPos(math.floor((i - 1) * (bw + gap)), 0)
+			button:SetSize(math.floor(bw), self:GetTall())
+		end
+	end
+	panel:AddItem(row)
+end
+
 local function Build(panel)
+	Presets(panel)
 	for _, s in ipairs(EvilFungus.SETTINGS) do
 		local cv = GetConVar(s.convar)
 		local control

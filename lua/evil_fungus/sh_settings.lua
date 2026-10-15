@@ -17,7 +17,7 @@ EvilFungus.SETTINGS = {
 		help = "Players who've gone under can respawn before their rescue window closes" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
-	{ name = "aggression", default = 1, min = 0, max = 5, decimals = 2, label = "Aggression",
+	{ name = "aggression", default = 1, min = 0, max = 20, decimals = 2, label = "Aggression",
 		help = "How far off it feels footsteps, how long it keeps after someone and how fast it grows and flows at them. At 0 it never notices anyone" },
 	{ name = "smell", default = 0, min = 0, max = 4000, decimals = 0, label = "Smell",
 		help = "How far off the mat it smells people and animals breathing and goes for where they are. Running and being hurt carry further, walls stop it. At 0 it only feels what walks on it" },
@@ -33,12 +33,21 @@ EvilFungus.SETTINGS = {
 		help = "Most strands all the fungus on the map can lay together before it stops spreading" },
 	{ name = "start_mass", default = 60, min = 10, max = 400, decimals = 0, label = "Starting body",
 		help = "How much body a fresh fungus has to spread with" },
-	{ name = "grow_speed", default = 1, min = 0, max = 5, decimals = 2, label = "Spread speed",
+	{ name = "grow_speed", default = 1, min = 0, max = 10, decimals = 2, label = "Spread speed",
 		help = "How fast it grows over new ground" },
-	{ name = "flow_speed", default = 1, min = 0.1, max = 5, decimals = 2, label = "Flow speed",
+	{ name = "flow_speed", default = 1, min = 0.1, max = 10, decimals = 2, label = "Flow speed",
 		help = "How fast its body moves through the mat it already has" },
 }
 
+-- Anything a preset leaves out goes back to its default.
+EvilFungus.PRESETS = {
+	{ name = "normal", label = "Normal", values = {} },
+	{ name = "unhinged", label = "Unhinged", values = {
+		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15,
+		aggression = 20, smell = 3000, grow_cost = 0.25, sprawl = 2.5, spores = 8,
+		max_nodes = 6000, start_mass = 150, grow_speed = 3, flow_speed = 3,
+	} },
+}
 
 local convars, byConVar = {}, {}
 for _, s in ipairs(EvilFungus.SETTINGS) do
@@ -66,3 +75,18 @@ net.Receive("EvilFungusSetting", function(_, ply)
 	RunConsoleCommand(s.convar, tostring(math.Clamp(value, s.min, s.max)))
 end)
 
+concommand.Add("evil_fungus_preset", function(ply, _, args)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+	for _, preset in ipairs(EvilFungus.PRESETS) do
+		if preset.name == args[1] then
+			for _, s in ipairs(EvilFungus.SETTINGS) do
+				RunConsoleCommand(s.convar, tostring(preset.values[s.name] or s.default))
+			end
+			return
+		end
+	end
+end, function(cmd)
+	local list = {}
+	for _, preset in ipairs(EvilFungus.PRESETS) do list[#list + 1] = cmd .. " " .. preset.name end
+	return list
+end)
