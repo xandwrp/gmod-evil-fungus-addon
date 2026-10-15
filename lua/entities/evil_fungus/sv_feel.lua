@@ -29,6 +29,11 @@ local ROT = { 70, 55, 40 }
 local SMELL_INTERVAL = 0.5
 local HURT_SMELL = 1
 local SMELL_KEEP = 0.5
+local SHAKE_INTERVAL = 0.25
+local SHAKE_SPEED = 200
+local SHAKE_MIN = 40
+local SHAKE_MAX = 5
+local SHAKE_GAP = 8
 
 ENT.WAVE_SPEED = WAVE_SPEED
 
@@ -40,6 +45,7 @@ function ENT:InitFeel()
 	self.Touching, self.Pending, self.Waves, self.Dragged = {}, {}, {}, {}
 	self.NextFeel, self.FeltAt = 0, -math.huge
 	self.NextSmell, self.Smelled = 0, nil
+	self.NextShake = 0
 end
 
 function ENT:Perceivable(ent)
@@ -127,6 +133,7 @@ function ENT:Feel(now)
 	self.Touching = touching
 	self:Breathe(dt)
 	self:Smell(now)
+	self:Shake(now)
 
 	for ent, st in pairs(touching) do
 		if st.food then
@@ -146,7 +153,11 @@ function ENT:Feel(now)
 		local p = self.Pending[i]
 		if now >= p.at then
 			table.remove(self.Pending, i)
-			self:Felt(p.ent, p.node, now)
+			if p.lure then
+				self:Lured(p.lure)
+			else
+				self:Felt(p.ent, p.node, now, p.from)
+			end
 		end
 	end
 
@@ -218,7 +229,72 @@ function ENT:Smell(now)
 	if not best then return end
 
 	if best ~= prey then self.NextDecide = 0 end
-	self.Prey, self.PreyNode, self.FeltAt, self.Smelled = best, bestNode, now, best
+	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt, self.Smelled = best, bestNode, nil, now, best
+end
+
+local function Grounded(ent)
+	if ent:IsPlayer() or ent:IsNPC() then return ent:IsOnGround() end
+	if ent:IsNextBot() then return ent.loco ~= nil and ent.loco:IsOnGround() end
+	local center = ent:WorldSpaceCenter()
+	local mins = ent:WorldSpaceAABB()
+	return util.TraceLine({ start = center, endpos = Vector(center.x, center.y, mins.z - SHAKE_GAP), filter = ent, mask = MASK_SOLID }).Hit
+end
+
+-- How hard something shakes the ground it's moving along. Faster is harder, and a can rolling past is quieter than a car.
+local function Shaking(ent)
+	local heavy
+	if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent:IsVehicle() then
+		heavy = 1
+	elseif ent:GetMoveType() == MOVETYPE_VPHYSICS and not ent.EvilFungusSleeper and not IsValid(ent:GetParent()) then
+		local phys = ent:GetPhysicsObject()
+		if not IsValid(phys) or phys:IsAsleep() then return 0 end
+		heavy = Lerp(math.Clamp(Kilos(ent) / LANDING_KG, 0, 1), LANDING[1], LANDING[2])
+	else
+		return 0
+	end
+	local speed = ent:GetVelocity():Length()
+	if speed < SHAKE_MIN or not Grounded(ent) then return 0 end
+	return heavy * math.min(SHAKE_MAX, speed / SHAKE_SPEED)
+end
+
+-- Anything moving along the ground near it comes through the ground to the mat's edge.
+-- What it can take, it goes after where the shaking came from. Anything else it just goes to look at.
+function ENT:Shake(now)
+	local range = EvilFungus.Setting("vibration")
+	if range <= 0 or now < self.NextShake or not self.Mat.mins then return end
+	self.NextShake = now + SHAKE_INTERVAL
+
+	local mins, maxs = self.Mat.mins, self.Mat.maxs
+	local far = range * SHAKE_MAX * LANDING[2]
+	local pad = Vector(far, far, far)
+	local prey, lure = {}, {}
+	for _, ent in ipairs(ents.FindInBox(mins - pad, maxs + pad)) do
+		if not self.Touching[ent] then
+			local shake = Shaking(ent)
+			local reach = range * shake
+			local pos = ent:GetPos()
+			local box = Vector(math.Clamp(pos.x, mins.x, maxs.x), math.Clamp(pos.y, mins.y, maxs.y), math.Clamp(pos.z, mins.z, maxs.z))
+			if shake > 0 and box:DistToSqr(pos) <= reach * reach then
+				local node = self:Closest(pos)
+				local d = node and node.pos:Distance(pos)
+				if d and d <= reach then
+					local who = ent:IsVehicle() and ent.GetDriver and ent:GetDriver() or ent
+					local pick = IsValid(who) and self:Perceivable(who) and prey or lure
+					local score = d / reach
+					if not pick.score or score < pick.score then
+						pick.score, pick.ent, pick.node, pick.pos, pick.d = score, who, node, pos, d
+					end
+				end
+			end
+		end
+	end
+
+	local speed = WAVE_SPEED * EvilFungus.TimeScale()
+	if prey.ent and #self.Pending < MAX_PENDING then
+		self.Pending[#self.Pending + 1] = { at = now + prey.d / speed, ent = prey.ent, node = prey.node, from = prey.pos }
+	elseif lure.ent and #self.Pending < MAX_PENDING then
+		self.Pending[#self.Pending + 1] = { at = now + lure.d / speed, lure = lure.pos }
+	end
 end
 
 function ENT:Ripple(node, now)
@@ -239,14 +315,27 @@ function ENT:Adopt(other)
 	for _, w in ipairs(other.Waves) do self.Waves[#self.Waves + 1] = w end
 	if other.FeltAt > self.FeltAt and IsValid(other.Prey) then
 		self.Prey, self.PreyNode, self.FeltAt, self.Eating = other.Prey, other.PreyNode, other.FeltAt, other.Eating
+		self.PreyFrom = other.PreyFrom
 	end
 	other:InitFeel()
 end
 
-function ENT:Felt(ent, node, now)
+function ENT:Felt(ent, node, now, from)
 	if not IsValid(ent) or node.dead or not self:Perceivable(ent) then return end
-	if self.Eating and IsValid(self.Prey) and self.Prey ~= ent then return end
-	self.Prey, self.PreyNode, self.FeltAt = ent, node, now
+	local prey = self.Prey
+	if IsValid(prey) and prey ~= ent then
+		if self.Eating then return end
+		-- Whoever's on it or on the air beats a rumble from somewhere off the mat.
+		if from and (self:Touches(prey) or self.Smelled == prey) then return end
+	end
+	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt = ent, node, from, now
+	self.NextDecide = 0
+end
+
+-- Something it can't eat moved nearby. Nothing better to do, so it goes and has a look.
+function ENT:Lured(pos)
+	if self.Hunting or self.Tending then return end
+	self.Lure = pos
 	self.NextDecide = 0
 end
 

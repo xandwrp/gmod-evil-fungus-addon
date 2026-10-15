@@ -225,19 +225,24 @@ function ENT:Decide(now)
 	self.Hunting = IsValid(prey) and node and not node.dead and now - self.FeltAt < memory
 		and self:Perceivable(prey)
 	if not self.Hunting then
-		self.Prey, self.PreyNode, self.Eating = nil, nil, nil
+		self.Prey, self.PreyNode, self.PreyFrom, self.Eating = nil, nil, nil, nil
 	end
 
 	local goal
 	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
-		goal = node
-		self.Target = (self:Touches(prey) or self.Smelled == prey) and prey:GetPos() or node.pos
+		self.Target = (self:Touches(prey) or self.Smelled == prey) and prey:GetPos() or self.PreyFrom or node.pos
+		goal = self:Closest(self.Target) or node
+		self.PreyNode = goal
 	elseif self.Tending then
 		goal = self.Tending.nest
 		self.Target = goal.pos
 		self.GoalStale = true
 	else
+		if self.Lure then
+			self.Target, self.Lure, self.Resting, self.GoalStale = self.Lure, nil, false, true
+			self.TargetUntil = now + math.Rand(WANDER_TIME[1], WANDER_TIME[2])
+		end
 		if not self.Target or now >= self.TargetUntil then self:PickTarget(now) end
 		goal = self.Goal
 		if self.GoalStale or not goal or goal.dead then
