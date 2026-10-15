@@ -31,4 +31,4 @@ Someone put a scraping under a microscope once. Hexagons, all the way down.
 | Spores | Fed well enough, it throws part of itself somewhere nearby and starts again there. Same fungus, so the patches find each other and merge | done |
 | Plants | Don't breathe out what it smells, so it only finds them by touch | done |
 | The air is nice | It gives off oxygen. The lure. Standing on it should feel good enough that you stay | open |
-| Hexagons | Look only, maybe a cell pattern in the mat | idea |
+| Hexagons | A faint cell pattern pressed into the mat's fibers | done |
