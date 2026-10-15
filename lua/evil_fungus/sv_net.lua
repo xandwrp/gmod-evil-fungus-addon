@@ -10,8 +10,8 @@ local LEVEL_INTERVAL = 0.25
 local LEVELS_PER_SEND = 1000
 local BODY_INTERVAL = 1 / 6
 local BODY_MAX_MASS = 8
-local BODY_MIN = 0.02
-local BODY_LIMIT = 1500
+local BODY_MIN = 0.08
+local BODY_LIMIT = 800
 local DECAY_INTERVAL = 2
 local DROP_CHUNK = 2000
 
@@ -146,9 +146,13 @@ local function SendBody(ready)
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		if IsValid(colony) and colony.Mat then
 			for node in pairs(colony.Mat.full) do
-				if node.m > BODY_MIN and node.nid and #list < BODY_LIMIT then list[#list + 1] = node end
+				if node.m > BODY_MIN and node.nid then list[#list + 1] = node end
 			end
 		end
+	end
+	if #list > BODY_LIMIT then
+		table.sort(list, function(a, b) return a.m > b.m end)
+		for i = #list, BODY_LIMIT + 1, -1 do list[i] = nil end
 	end
 	net.Start("EvilFungusBody")
 	net.WriteUInt(#list, 12)

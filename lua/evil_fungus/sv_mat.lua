@@ -15,7 +15,7 @@ local D_FLOOR = 0.4
 local D_MAX = 10
 local D_GAIN = 0.06
 local D_DECAY = 0.004
-local EMPTY = 1e-3
+local EMPTY = 0.01
 
 Mat.STEP = STEP
 Mat.D_FLOOR = D_FLOOR
