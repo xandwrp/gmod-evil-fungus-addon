@@ -68,4 +68,6 @@ function ENT:DebugDraw(now)
 	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d"):format(state, self.Body, mat.count), life, TARGET)
 	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  feel %.2f"):format(
 		r.decide or 0, r.flow or 0, r.grow or 0, r.feel or 0), life, TARGET)
+	local mind = self.Mind
+	debugoverlay.EntityTextAtPosition(at, 2, ("mind %.2f  kept %.2f  wired %.2f"):format(mind:Level(), mind.kept, mind.wired), life, TARGET)
 end

@@ -503,6 +503,7 @@ end
 
 function Sleep.Hold(rag, owner, fungus, s)
 	s.rag, s.owner, s.rejected, s.loose, s.arrived = rag, owner, {}, 1, 0
+	s.brain = EvilFungus.Brain(owner)
 	s.grips, s.biped = Grips(rag)
 	s.size = 1
 	if s.biped then
@@ -586,7 +587,10 @@ local function Digest(s, now)
 		fungus.Mat:SetMass(nest, nest.m + due - s.fed)
 	end
 	s.fed = due
-	if k >= 1 then s.done = true end
+	if k >= 1 then
+		s.done = true
+		if IsValid(fungus) then fungus.Mind:Keep(s.brain) end
+	end
 end
 
 -- Whatever got pulled out of it wants nothing to do with it, or anything it's grown over, for a good while.

@@ -17,6 +17,7 @@ else
 	resource.AddFile("materials/evil_fungus/flesh.vtf")
 	resource.AddFile("materials/evil_fungus/fiber.vtf")
 	include("evil_fungus/sv_creatures.lua")
+	include("evil_fungus/sv_mind.lua")
 	include("evil_fungus/sv_net.lua")
 	include("evil_fungus/sv_sleep.lua")
 end

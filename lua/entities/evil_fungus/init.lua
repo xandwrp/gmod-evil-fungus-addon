@@ -83,6 +83,7 @@ function ENT:Initialize()
 	self:DrawShadow(false)
 
 	local now = CurTime()
+	self.Mind = self.Mind or EvilFungus.NewMind()
 	local mat = EvilFungus.NewMat()
 	self.Mat = mat
 
@@ -368,6 +369,7 @@ function ENT:Fuse(other, mine, theirs, now)
 	if other.Mat.count > self.Mat.count then keep, lose = other, self end
 
 	keep.Mat:Absorb(lose.Mat)
+	EvilFungus.Converge(keep.Mind, lose.Mind)
 	keep.Mat:Link(mine, theirs, now)
 	keep:Adopt(lose)
 	keep:Ripple(mine, now)
@@ -463,6 +465,7 @@ function ENT:Throw(from, dir)
 	if not IsValid(spore) then return true end
 	spore:SetPos(tr.HitPos + tr.HitNormal * 4)
 	spore.SpawnAt, spore.SpawnUp, spore.StartMass = tr.HitPos, tr.HitNormal, self.Body * SPORE_SHARE
+	spore.Mind = self.Mind
 	spore:Spawn()
 	spore:Activate()
 	for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * (1 - SPORE_SHARE)) end
