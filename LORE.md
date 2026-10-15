@@ -28,6 +28,7 @@ Someone put a scraping under a microscope once. Hexagons, all the way down.
 | Getting someone back | For the first minute of that, a sleeper can be torn out by anything with enough force. Ten seconds later they get up. NPCs come back terrified of it and won't go near the mat for a while. Players stay held until then, unless the server lets them respawn | done |
 | Feels you walking | Footsteps ripple through the mat to the body. Crouching is quiet, sprinting is loud, jumping over it is silent | done |
 | Smells you breathing | Breathers leave a CO2 plume, heavier when running or hurt. It spreads up the plume toward you from off the mat | planned |
+| Spores | Fed well enough, it throws part of itself somewhere nearby and starts again there. Same fungus, so the patches find each other and merge | done |
 | Plants | Don't breathe out what it smells, so it only finds them by touch | done |
 | The air is nice | It gives off oxygen. The lure. Standing on it should feel good enough that you stay | open |
 | Hexagons | Look only, maybe a cell pattern in the mat | idea |
