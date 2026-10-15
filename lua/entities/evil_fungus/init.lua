@@ -127,7 +127,9 @@ function ENT:Think()
 		end
 		local dt = FrameTime() * scale
 		local steps = math.Clamp(math.ceil(scale), 1, FLOW_SUBSTEPS)
-		for _ = 1, steps do self:Flow(dt / steps, now) end
+		local rate = FLOW * EvilFungus.Setting("flow_speed")
+		if self.Hunting then rate = rate * (0.5 + 0.5 * EvilFungus.Setting("aggression")) end
+		for _ = 1, steps do self:Flow(dt / steps, now, rate) end
 		t = self:Cost("flow", t)
 		self:Spread(dt, now)
 		if self.Absorbed then return end
@@ -160,25 +162,29 @@ function ENT:Report(now)
 end
 
 function ENT:Settle()
-	local center, up, body = Vector(), Vector(), 0
+	local cx, cy, cz, ux, uy, uz, body = 0, 0, 0, 0, 0, 0, 0
 	for node in pairs(self.Mat.full) do
-		center:Add(node.pos * node.m)
-		up:Add(node.normal * node.m)
-		body = body + node.m
+		local m, n = node.m, node.normal
+		cx, cy, cz = cx + node.x * m, cy + node.y * m, cz + node.z * m
+		local nx, ny, nz = n:Unpack()
+		ux, uy, uz = ux + nx * m, uy + ny * m, uz + nz * m
+		body = body + m
 	end
 	self.Body = body
 	if body <= EMPTY then return end
-	self.Center = center / body
-	self.Up = up:GetNormalized()
+	self.Center = Vector(cx / body, cy / body, cz / body)
+	self.Up = Vector(ux, uy, uz):GetNormalized()
 	self:SetPos(self.Center + self.Up * 4)
 end
 
 function ENT:Closest(pos)
 	local node = self.Mat:Nearest(pos, NEAR_GOAL)
 	if node then return node end
+	local px, py, pz = pos:Unpack()
 	local bestD2 = math.huge
 	for _, n in pairs(self.Mat.nodes) do
-		local d2 = n.pos:DistToSqr(pos)
+		local dx, dy, dz = n.x - px, n.y - py, n.z - pz
+		local d2 = dx * dx + dy * dy + dz * dz
 		if d2 < bestD2 then node, bestD2 = n, d2 end
 	end
 	return node
@@ -271,8 +277,9 @@ function ENT:Decide(now)
 end
 
 local flowList = {}
+local Conductance, Thicken, SetMass = Mat.Conductance, Mat.Thicken, Mat.SetMass
 
-function ENT:Flow(dt, now)
+function ENT:Flow(dt, now, rate)
 	local dist, mat = self.Dist, self.Mat
 	if not dist then return end
 
@@ -282,37 +289,39 @@ function ENT:Flow(dt, now)
 		flowList[n] = node
 	end
 
-	local rate = FLOW * EvilFungus.Setting("flow_speed")
-	if self.Hunting then rate = rate * (0.5 + 0.5 * EvilFungus.Setting("aggression")) end
 	local spread = math.min(0.25, SPREAD * dt)
 	for i = 1, n do
 		local node = flowList[i]
 		flowList[i] = nil
 		local m = node.m
 		if m > EMPTY and not node.dead then
+			local edges = node.edges
 			local d, down, to = dist[node] or math.huge, nil, nil
-			for _, e in ipairs(node.edges) do
-				local other = mat:Other(e, node)
+			for j = 1, #edges do
+				local e = edges[j]
+				local other = e.a == node and e.b or e.a
 				local od = dist[other]
 				if od and od < d and other.m < CAP then d, down, to = od, e, other end
 			end
 			if down then
-				local q = m * math.min(0.9, rate * mat:Conductance(down, now) / down.len * dt)
+				local q = m * math.min(0.9, rate * Conductance(mat, down, now) / down.len * dt)
 				m = m - q
-				mat:SetMass(to, to.m + q)
-				mat:Thicken(down, q, now)
+				SetMass(mat, to, to.m + q)
+				Thicken(mat, down, q, now)
 			end
 			if m > SPREAD_MASS then
-				for _, e in ipairs(node.edges) do
-					local other = mat:Other(e, node)
-					if other.m < m then
-						local q = (m - other.m) * spread
+				for j = 1, #edges do
+					local e = edges[j]
+					local other = e.a == node and e.b or e.a
+					local om = other.m
+					if om < m then
+						local q = (m - om) * spread
 						m = m - q
-						mat:SetMass(other, other.m + q)
+						SetMass(mat, other, om + q)
 					end
 				end
 			end
-			mat:SetMass(node, m)
+			SetMass(mat, node, m)
 		end
 	end
 end
@@ -397,16 +406,28 @@ function ENT:Spread(dt, now)
 		return
 	end
 
+	-- New strands start empty, so the edge it grows from only changes once a strand's cost takes it under.
+	local frontier, best, bestD2 = nil, nil, math.huge
 	local target = self.Target
-	while self.ReachDebt >= 1 and target do
-		self.ReachDebt = self.ReachDebt - 1
-		local best, bestD2 = nil, math.huge
+	local function Scan()
+		frontier, best, bestD2 = {}, nil, math.huge
+		local tx, ty, tz
+		if target then tx, ty, tz = target:Unpack() end
 		for node in pairs(mat.full) do
 			if Frontier(node) then
-				local d2 = node.pos:DistToSqr(target)
-				if d2 < bestD2 then best, bestD2 = node, d2 end
+				frontier[#frontier + 1] = node
+				if tx then
+					local dx, dy, dz = node.x - tx, node.y - ty, node.z - tz
+					local d2 = dx * dx + dy * dy + dz * dz
+					if d2 < bestD2 then best, bestD2 = node, d2 end
+				end
 			end
 		end
+	end
+
+	while self.ReachDebt >= 1 and target do
+		self.ReachDebt = self.ReachDebt - 1
+		if not frontier or best and not Frontier(best) then Scan() end
 		if best and bestD2 > ARRIVE * ARRIVE then
 			local dir = (target - best.pos):GetNormalized() + VectorRand() * (REACH_JITTER * (0.5 + 0.5 * sprawl))
 			self:Sprout(best, dir, now)
@@ -416,7 +437,12 @@ function ENT:Spread(dt, now)
 
 	while self.SpreadDebt >= 1 do
 		self.SpreadDebt = self.SpreadDebt - 1
-		local from = RandomNode(mat.full, Frontier)
+		if not frontier then Scan() end
+		local from
+		for _ = 1, #frontier do
+			local i = math.random(#frontier)
+			if Frontier(frontier[i]) then from = frontier[i] break end
+		end
 		if from then self:Sprout(from, VectorRand(), now) end
 		if self.Absorbed then return end
 	end

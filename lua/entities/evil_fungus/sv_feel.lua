@@ -99,7 +99,7 @@ function ENT:Feel(now)
 		local mins, maxs = mat.mins - BOX_PAD, mat.maxs + BOX_PAD
 		local function Visit(ent)
 			if not ent:GetPos():WithinAABox(mins, maxs) or not ent:IsOnGround() or not self:Perceivable(ent) then return end
-			local node = mat:Nearest(ent:GetPos(), FEEL_RADIUS, function(n) return n.normal.z > STANDING end)
+			local node = mat:Nearest(ent:GetPos(), FEEL_RADIUS, function(n) return n.up > STANDING end)
 			if node then
 				local st = self.Touching[ent] or { walked = 0, still = now + STILL_STEP }
 				st.node = node

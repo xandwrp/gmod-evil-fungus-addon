@@ -31,10 +31,6 @@ local function Key(ix, iy, iz)
 	return (ix + 512) * 1048576 + (iy + 512) * 1024 + (iz + 512)
 end
 
-local function CellOf(pos)
-	return math.floor(pos.x / CELL), math.floor(pos.y / CELL), math.floor(pos.z / CELL)
-end
-
 local function Place(self, node)
 	node.id = self.nextId
 	self.nextId = self.nextId + 1
@@ -42,8 +38,8 @@ local function Place(self, node)
 	self.count = self.count + 1
 	if node.m > EMPTY then self.full[node] = true end
 
-	local pos = node.pos
-	local key = Key(CellOf(pos))
+	local x, y, z = node.x, node.y, node.z
+	local key = Key(math.floor(x / CELL), math.floor(y / CELL), math.floor(z / CELL))
 	local cell = self.cells[key]
 	if not cell then
 		cell = {}
@@ -52,16 +48,24 @@ local function Place(self, node)
 	cell[node] = true
 	node.cell = key
 
-	if self.mins then
-		self.mins = Vector(math.min(self.mins.x, pos.x), math.min(self.mins.y, pos.y), math.min(self.mins.z, pos.z))
-		self.maxs = Vector(math.max(self.maxs.x, pos.x), math.max(self.maxs.y, pos.y), math.max(self.maxs.z, pos.z))
-	else
-		self.mins, self.maxs = Vector(pos), Vector(pos)
+	local mins, maxs = self.mins, self.maxs
+	if not mins then
+		self.mins, self.maxs = Vector(x, y, z), Vector(x, y, z)
+	elseif x < mins.x or y < mins.y or z < mins.z or x > maxs.x or y > maxs.y or z > maxs.z then
+		self.mins = Vector(math.min(mins.x, x), math.min(mins.y, y), math.min(mins.z, z))
+		self.maxs = Vector(math.max(maxs.x, x), math.max(maxs.y, y), math.max(maxs.z, z))
 	end
+end
+
+-- Strands never move, so their position is also kept as plain numbers. Reading a Vector costs a call into the engine.
+local function Unpack(node)
+	node.x, node.y, node.z = node.pos:Unpack()
+	node.up = node.normal.z
 end
 
 function Mat:Add(pos, normal)
 	local node = { pos = pos, normal = normal, m = 0, edges = {} }
+	Unpack(node)
 	Place(self, node)
 	if EvilFungus.Net then EvilFungus.Net.Node(node) end
 	return node
@@ -133,7 +137,7 @@ end
 
 function Mat:Near(pos, radius, visit)
 	local r2 = radius * radius
-	local px, py, pz = pos.x, pos.y, pos.z
+	local px, py, pz = pos:Unpack()
 	local x0, y0, z0 = math.floor((px - radius) / CELL), math.floor((py - radius) / CELL), math.floor((pz - radius) / CELL)
 	local x1, y1, z1 = math.floor((px + radius) / CELL), math.floor((py + radius) / CELL), math.floor((pz + radius) / CELL)
 	for ix = x0, x1 do
@@ -142,7 +146,8 @@ function Mat:Near(pos, radius, visit)
 				local cell = self.cells[Key(ix, iy, iz)]
 				if cell then
 					for node in pairs(cell) do
-						local d2 = node.pos:DistToSqr(pos)
+						local dx, dy, dz = node.x - px, node.y - py, node.z - pz
+						local d2 = dx * dx + dy * dy + dz * dz
 						if d2 <= r2 and visit(node, d2) == false then return end
 					end
 				end
@@ -280,4 +285,10 @@ function Mat:Distances(sources, cost, limit, stop)
 		end
 	end
 	return dist
+end
+
+for colony in pairs(EvilFungus.Colonies or {}) do
+	for _, node in pairs(colony.Mat and colony.Mat.nodes or {}) do
+		if not node.x then Unpack(node) end
+	end
 end
