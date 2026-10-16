@@ -30,6 +30,9 @@ local ARRIVE = 32
 local REST_TIME = { 2, 5 }
 local LOSE_TIME = 8
 local NEAR_GOAL = 96
+local LEAD_TIME = 1.5
+local HEADING_TIME = 0.6
+local LEAD_LIFT = Vector(0, 0, 16)
 local WEAVE_RATE = 6
 local WEAVE_RADIUS = 64
 local WEAVE_SPACING = 7
@@ -238,7 +241,7 @@ function ENT:Decide(now)
 	local goal
 	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
-		self.Target = (self:Touches(prey) or self.Smelled == prey) and prey:GetPos() or self.PreyFrom or node.pos
+		self.Target = (self:Touches(prey) or self.Smelled == prey) and self:Lead(prey, now) or self.PreyFrom or node.pos
 		goal = self:Closest(self.Target) or node
 		self.PreyNode = goal
 	elseif self.Tending then
@@ -274,6 +277,25 @@ function ENT:Decide(now)
 			left = left - 1
 			return left <= 0
 		end)
+end
+
+-- The more it knows, the less it goes where you are and the more it goes where you're headed.
+-- It reads that off how you've been moving, not off the last juke.
+function ENT:Lead(prey, now)
+	local pos = prey:GetPos()
+	local vel = prey:GetVelocity()
+	vel.z = 0
+	if self.LeadOf ~= prey then
+		self.LeadOf, self.Heading = prey, vel
+	else
+		self.Heading = LerpVector(1 - math.exp(-(now - self.LeadAt) / HEADING_TIME), self.Heading, vel)
+	end
+	self.LeadAt = now
+
+	local ahead = LEAD_TIME * self.Mind:Grasp() / EvilFungus.TimeScale()
+	if ahead <= 0 then return pos end
+	local tr = util.TraceLine({ start = pos + LEAD_LIFT, endpos = pos + self.Heading * ahead + LEAD_LIFT, mask = MASK_SOLID_BRUSHONLY })
+	return tr.HitPos - LEAD_LIFT
 end
 
 local flowList = {}
@@ -505,7 +527,7 @@ function ENT:Throw(from, dir)
 end
 
 -- Fed well enough, it throws part of itself somewhere else to start over. Same fungus, so they find each other again.
--- Whoever it can smell getting away gets one at their feet.
+-- Whoever it can smell getting away gets one at their feet, or once it's learned a bit, wherever they're running to.
 function ENT:Spores(dt)
 	local rate = EvilFungus.Setting("spores")
 	if rate <= 0 or self.Body < SPORE_BODY then
@@ -519,8 +541,9 @@ function ENT:Spores(dt)
 
 	local from = self.Center + self.Up * 24
 	local prey = self.Hunting and self.Smelled == self.Prey and self.Prey
-	if IsValid(prey) and from:DistToSqr(prey:GetPos()) < SPORE_RANGE * SPORE_RANGE
-		and self:Throw(from, (prey:GetPos() - from):GetNormalized()) then
+	local at = IsValid(prey) and self.Target
+	if at and from:DistToSqr(at) < SPORE_RANGE * SPORE_RANGE
+		and self:Throw(from, (at - from):GetNormalized()) then
 		return
 	end
 	for _ = 1, SPORE_TRIES do

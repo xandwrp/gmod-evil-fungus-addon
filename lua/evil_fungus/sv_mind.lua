@@ -41,6 +41,11 @@ function Mind:Level()
 	return math.log(1 + self:Total()) / math.log(2)
 end
 
+-- How much of what it's seen it has understood. Nothing at first, and closer to all of it with every step up.
+function Mind:Grasp()
+	return 1 - 1 / (1 + self:Total())
+end
+
 function Mind:Keep(brain)
 	self.kept = self.kept + brain
 end
