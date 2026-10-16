@@ -555,24 +555,46 @@ local function Colonies()
 	return n
 end
 
-local function Taken(pos)
+-- Whether the map has room for another patch at all.
+function EvilFungus.Room()
+	return Colonies() < MAX_COLONIES and EvilFungus.Strands() < EvilFungus.Setting("max_nodes") * 0.9
+end
+
+function EvilFungus.Taken(pos, clear)
+	clear = clear or SPORE_CLEAR
 	for colony in pairs(EvilFungus.Colonies) do
-		if IsValid(colony) and colony.Mat and colony.Mat:Nearest(pos, SPORE_CLEAR) then return true end
+		if IsValid(colony) and colony.Mat and colony.Mat:Nearest(pos, clear) then return true end
 	end
 	return false
+end
+local Taken = EvilFungus.Taken
+
+-- A new patch on the ground at pos, starting with that much body and thinking with that mind.
+function EvilFungus.Plant(pos, normal, mass, mind)
+	local spore = ents.Create("evil_fungus")
+	if not IsValid(spore) then return end
+	spore:SetPos(pos + normal * 4)
+	spore.SpawnAt, spore.SpawnUp, spore.StartMass = pos, normal, mass
+	spore.Mind = mind
+	spore:Spawn()
+	spore:Activate()
+	return spore
+end
+
+-- Takes that much body out of the mat, evenly from everywhere it has any.
+function ENT:Spend(mass)
+	if self.Body <= EMPTY then return end
+	local keep = math.max(0, 1 - mass / self.Body)
+	for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * keep) end
+	self.Body = self.Body * keep
 end
 
 function ENT:Throw(from, dir)
 	local tr = util.TraceLine({ start = from, endpos = from + dir * SPORE_RANGE, mask = MASK_SOLID_BRUSHONLY })
 	if not tr.HitWorld or tr.HitSky or tr.HitNoDraw or tr.StartSolid or tr.Fraction <= 0.2 or Taken(tr.HitPos) then return false end
-	local spore = ents.Create("evil_fungus")
-	if not IsValid(spore) then return true end
-	spore:SetPos(tr.HitPos + tr.HitNormal * 4)
-	spore.SpawnAt, spore.SpawnUp, spore.StartMass = tr.HitPos, tr.HitNormal, self.Body * SPORE_SHARE
-	spore.Mind = self.Mind
-	spore:Spawn()
-	spore:Activate()
-	for node in pairs(self.Mat.full) do self.Mat:SetMass(node, node.m * (1 - SPORE_SHARE)) end
+	local mass = self.Body * SPORE_SHARE
+	if not EvilFungus.Plant(tr.HitPos, tr.HitNormal, mass, self.Mind) then return true end
+	self:Spend(mass)
 
 	local fx = EffectData()
 	fx:SetStart(from)
@@ -593,7 +615,7 @@ function ENT:Spores(dt)
 	self.SporeDebt = (self.SporeDebt or 0) + dt * rate / SPORE_EVERY
 	if self.SporeDebt < 1 then return end
 	self.SporeDebt = 0
-	if Colonies() >= MAX_COLONIES or EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") * 0.9 then return end
+	if not EvilFungus.Room() then return end
 
 	local from = self.Center + self.Up * 24
 	local prey = self.Hunting and self.Smelled == self.Prey and self.Prey
