@@ -52,6 +52,11 @@ local FLEE_DIST = 400
 local FLEE_AGAIN = 1.5
 
 local REST_TORSO = 30
+local CATCH_RADIUS = 64
+local LOWER_SPEED = 30
+local WRAP_HOLD = 2
+local WRAP_OUT = 12
+
 local STANDING_OFFSETS = { Vector(0, 0, 0), Vector(32, 0, 0), Vector(-32, 0, 0), Vector(0, 32, 0), Vector(0, -32, 0) }
 
 -- Snow angel, in units for a normal-sized person: along the body toward the head, out to its left, and up off the surface.
@@ -62,6 +67,16 @@ local POSE = {
 	lhand = { 32, 27, 3, LIMB_TOL }, rhand = { 32, -27, 3, LIMB_TOL },
 	lknee = { -17, 10, 4, LIMB_TOL }, rknee = { -17, -10, 4, LIMB_TOL },
 	lfoot = { -33, 14, 3, LIMB_TOL }, rfoot = { -33, -14, 3, LIMB_TOL },
+}
+
+-- Wound up against a strand in the air: upright along it, arms at the sides, legs together, front facing out.
+local WRAP = {
+	pelvis = { 0, 0, 0, TORSO_TOL }, chest = { 16, 0, 1, TORSO_TOL }, head = { 30, 0, 1, TORSO_TOL },
+	lshoulder = { 20, 8, 0, LIMB_TOL }, rshoulder = { 20, -8, 0, LIMB_TOL },
+	lelbow = { 10, 10, 1, LIMB_TOL }, relbow = { 10, -10, 1, LIMB_TOL },
+	lhand = { 0, 9, 2, LIMB_TOL }, rhand = { 0, -9, 2, LIMB_TOL },
+	lknee = { -17, 4, 0, LIMB_TOL }, rknee = { -17, -4, 0, LIMB_TOL },
+	lfoot = { -33, 3, 0, LIMB_TOL }, rfoot = { -33, -3, 0, LIMB_TOL },
 }
 
 local function Drowsy(ent, d)
@@ -198,7 +213,7 @@ local function HeadWay(s, up)
 end
 
 local function Target(s, key, at)
-	local o = POSE[key]
+	local o = (s.pose or POSE)[key]
 	local lift = o[3] * s.size + CARRY_LIFT * (1 - s.arrived)
 	return at + s.along * (o[1] * s.size) + s.left * (o[2] * s.size) + s.up * lift
 end
@@ -239,8 +254,8 @@ local function Nest(s)
 	end)
 	table.sort(list, function(a, b) return a.d2 < b.d2 end)
 	if #list == 0 then
-		local far = fungus:Closest(from)
-		if far and not far.air and not s.rejected[far] and far.pos:DistToSqr(from) < NEST_FAR * NEST_FAR then list[1] = { node = far } end
+		local far = fungus.Mat:Nearest(from, NEST_FAR, function(node) return not node.air and not s.rejected[node] end)
+		if far then list[1] = { node = far } end
 	end
 
 	local best, bestScore
@@ -482,6 +497,7 @@ function Sleep.Under(ent, fungus)
 	Sleep.drowsy[ent] = nil
 	Drowsy(ent, 0)
 	local rag = Body(ent)
+	local aloft = not ent:IsOnGround() or nil
 
 	if ent:IsPlayer() then
 		local s
@@ -491,7 +507,7 @@ function Sleep.Under(ent, fungus)
 			for _, wep in ipairs(ent:GetWeapons()) do
 				kit.weapons[#kit.weapons + 1] = { class = wep:GetClass(), clip1 = wep:Clip1(), clip2 = wep:Clip2() }
 			end
-			s = { kit = kit, health = ent:Health() }
+			s = { kit = kit, health = ent:Health(), aloft = aloft }
 		end
 		ent:KillSilent()
 		ent:AddDeaths(1)
@@ -513,8 +529,37 @@ function Sleep.Under(ent, fungus)
 	end
 	Hide(ent)
 	ent.EvilFungusAsleep = rag
-	Sleep.Hold(rag, ent, fungus, {})
+	Sleep.Hold(rag, ent, fungus, { aloft = aloft })
 	return rag
+end
+
+-- Caught up in the air, they're held on the strand that got them, and the way down is back along it.
+local function Hang(s)
+	local from = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
+	local node = s.fungus.Mat:Nearest(from, CATCH_RADIUS, function(n) return n.air end)
+	if not node then return false end
+	local path = { node }
+	while true do
+		local low
+		for _, e in ipairs(node.edges) do
+			local other = e.a == node and e.b or e.a
+			if other.air and other.height < node.height and (not low or other.height < low.height) then low = other end
+		end
+		if not low then break end
+		path[#path + 1] = low
+		node = low
+	end
+
+	local first = path[1]
+	s.path, s.leg, s.pose, s.arrived, s.wrapAt = path, 1, WRAP, 1, CurTime()
+	s.along = Vector(first.normal)
+	s.up = Tangent(from - first.pos, s.along)
+	s.left = s.along:Cross(s.up)
+	s.nest = first
+	s.rag:SetNW2Vector(EvilFungus.NEST_VAR, first.pos)
+	s.rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, s.up)
+	s.rag:SetNW2Float(EvilFungus.WRAP_VAR, s.wrapAt)
+	return true
 end
 
 function Sleep.Hold(rag, owner, fungus, s)
@@ -540,7 +585,42 @@ function Sleep.Hold(rag, owner, fungus, s)
 			Touched(held, Thrower(hit))
 		end
 	end)
+	if s.aloft and IsValid(s.fungus) and Hang(s) then return end
 	if not Nest(s) then Sleep.Free(s) end
+end
+
+local function Land(s, now)
+	s.path, s.pose, s.arrived = nil, nil, 0
+	s.rag:SetNW2Float(EvilFungus.LANDED_VAR, now)
+	SetStage(s, POSING)
+	if not Nest(s) then Sleep.Free(s) end
+end
+
+-- Hangs on to them up there for a moment while it winds them up, then works them down the strands back to the ground.
+local function Lowering(s, dt, now)
+	if Torn(s, dt, now) then return Rescued(s) end
+	s.fungus.TunnelAt = now
+	local node = s.path[s.leg]
+	while node and node.dead do
+		s.leg = s.leg + 1
+		node = s.path[s.leg]
+	end
+	if not node then return Land(s, now) end
+	if s.nest ~= node then
+		s.nest = node
+		s.rag:SetNW2Vector(EvilFungus.NEST_VAR, node.pos)
+	end
+
+	local to = node.pos + s.up * (WRAP_OUT * s.size)
+	local d = to - s.carry
+	local step = LOWER_SPEED * dt
+	if d:LengthSqr() <= step * step then
+		s.carry = to
+		if s.leg > 1 or now - s.wrapAt >= WRAP_HOLD then s.leg = s.leg + 1 end
+	else
+		s.carry = s.carry + d:GetNormalized() * step
+	end
+	Steer(s, dt)
 end
 
 local function Posing(s, dt, now)
@@ -580,7 +660,15 @@ hook.Add("Tick", "EvilFungusSleep", function()
 		if not IsValid(rag) then
 			Sleep.sleepers[rag] = nil
 		elseif s.stage == POSING then
-			if s.nest and not s.nest.dead and IsValid(s.fungus) then Posing(s, dt, now) else Sleep.Free(s) end
+			if not IsValid(s.fungus) then
+				Sleep.Free(s)
+			elseif s.path then
+				Lowering(s, dt, now)
+			elseif s.nest and not s.nest.dead then
+				Posing(s, dt, now)
+			else
+				Sleep.Free(s)
+			end
 		elseif s.stage == CONSUMING then
 			if Torn(s, dt, now) then Rescued(s) else Steer(s, dt) end
 		end

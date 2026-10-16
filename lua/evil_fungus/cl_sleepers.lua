@@ -53,6 +53,15 @@ local WIRE_R = { 0.45, 0.8 }
 local WIRE_SPAN = { 8, 16 }
 local WIRE_ARCH = 0.6
 
+local WRAP_GROW = 2
+local UNWRAP = 1.5
+local WRAP_TURNS = 7
+local WRAP_SAMPLES = 56
+local WRAP_STRANDS = 3
+local WRAP_R = { 4.5, 8 }
+local WRAP_THICK = 0.55
+local WRAP_CROWN = 4
+
 local LIMB_SIDES = 5
 local SHOWN = 0.02
 local THICK = {
@@ -99,6 +108,7 @@ local function Cache(rag)
 	end
 	if #c.grips == 0 then c.grips[1] = 0 end
 	c.pelvis = rag:LookupBone(EvilFungus.HOLD_BONES.pelvis) or 0
+	c.lfoot, c.rfoot = rag:LookupBone(EvilFungus.HOLD_BONES.lfoot), rag:LookupBone(EvilFungus.HOLD_BONES.rfoot)
 	local eyes = rag:LookupAttachment("eyes")
 	c.eyes = eyes and eyes > 0 and eyes or nil
 	rag.EvilFungusCache = c
@@ -287,6 +297,43 @@ local function Vein(shapes, rag, c, nest, up, now, light, S)
 	end
 end
 
+-- Caught up off the ground, they get wound up tight from the head down for the trip back to it, and unwound once they're there.
+local function Wrap(shapes, rag, c, clock, light, S)
+	local since = rag:GetNW2Float(EvilFungus.WRAP_VAR, 0)
+	if since <= 0 then return end
+	local k = math.Clamp((clock - since) / WRAP_GROW, 0, 1)
+	local landed = rag:GetNW2Float(EvilFungus.LANDED_VAR, 0)
+	if landed > 0 then k = k * (1 - math.Clamp((clock - landed) / UNWRAP, 0, 1)) end
+	if k <= 0 then return end
+
+	local head = c.head and rag:GetBonePosition(c.head)
+	local pelvis = rag:GetBonePosition(c.pelvis)
+	if not head or not pelvis then return end
+	local lf, rf = c.lfoot and rag:GetBonePosition(c.lfoot), c.rfoot and rag:GetBonePosition(c.rfoot)
+	local bottom = lf and rf and (lf + rf) * 0.5 or pelvis * 2 - head
+	local axis = head - bottom
+	if axis:LengthSqr() < 1 then return end
+	axis:Normalize()
+	local top = head + axis * WRAP_CROWN
+	local ang = axis:Angle()
+	local side, bin = ang:Right(), ang:Up()
+
+	local r, g, b = Mix(S.ROOT, S.BODY_THIN, 0.6)
+	local n = math.max(2, math.ceil(WRAP_SAMPLES * k))
+	for j = 0, WRAP_STRANDS - 1 do
+		local pts, radii = {}, {}
+		for i = 0, n do
+			local u = i / WRAP_SAMPLES
+			if u > k then u = k end
+			local theta = u * WRAP_TURNS * math.pi * 2 + j / WRAP_STRANDS * math.pi * 2
+			local radius = Lerp(math.sin(u * math.pi), WRAP_R[1], WRAP_R[2])
+			pts[i + 1] = Lerp(u, top, bottom) + (side * math.cos(theta) + bin * math.sin(theta)) * radius
+			radii[i + 1] = WRAP_THICK
+		end
+		Shape(shapes, pts, radii, axis, LIMB_SIDES, r, g, b, light)
+	end
+end
+
 -- Wherever a part has shrunk away, fungus fills the same shape.
 local function Limbs(shapes, rag, c, up, light, S)
 	local min = EvilFungus.MIN_SCALE
@@ -432,6 +479,7 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 						end
 					end
 					if stage == POSING or stage == CONSUMING then
+						Wrap(shapes, rag, c, clock, light, S)
 						if close then Fibers(shapes, rag, c, nest, up, t, now, light) end
 						Wires(shapes, rag, c, nest, up, t, light, S)
 					end
