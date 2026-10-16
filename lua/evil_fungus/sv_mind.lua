@@ -110,6 +110,30 @@ function EvilFungus.Converge(keep, lose)
 	end
 end
 
+-- For trying things out: every fungus on the map gets heads, or learns a trick, or all of them.
+concommand.Add("evil_fungus_teach", function(ply, _, args)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+	local what, amount = args[1] or "all", tonumber(args[2]) or 1
+	local done = {}
+	for colony in pairs(EvilFungus.Colonies or {}) do
+		local mind = colony.Mind
+		if mind and not done[mind] then
+			done[mind] = true
+			if what == "heads" then
+				mind.kept = mind.kept + amount
+			else
+				for tactic in pairs(TACTICS) do
+					if what == "all" or what == tactic then mind.know[tactic] = (mind.know[tactic] or 0) + amount end
+				end
+			end
+		end
+	end
+end, function(cmd)
+	local list = { cmd .. " all", cmd .. " heads" }
+	for tactic in SortedPairs(TACTICS) do list[#list + 1] = cmd .. " " .. tactic end
+	return list
+end, "Give every fungus on the map heads, or knowledge of one way people get away from it, or all of them: <heads|tactic|all> [amount]")
+
 -- The strands into a head thicken the whole way through, and what gets through goes with how thick they are.
 local nextUpdate = 0
 
