@@ -5,6 +5,7 @@ AddCSLuaFile("evil_fungus/cl_mat.lua")
 AddCSLuaFile("evil_fungus/cl_render.lua")
 AddCSLuaFile("evil_fungus/cl_dream.lua")
 AddCSLuaFile("evil_fungus/cl_sleepers.lua")
+AddCSLuaFile("evil_fungus/cl_carriers.lua")
 include("evil_fungus/sh_settings.lua")
 include("evil_fungus/sh_drag.lua")
 if CLIENT then
@@ -13,6 +14,7 @@ if CLIENT then
 	include("evil_fungus/cl_render.lua")
 	include("evil_fungus/cl_dream.lua")
 	include("evil_fungus/cl_sleepers.lua")
+	include("evil_fungus/cl_carriers.lua")
 else
 	resource.AddFile("materials/evil_fungus/flesh.vtf")
 	resource.AddFile("materials/evil_fungus/fiber.vtf")
@@ -20,4 +22,5 @@ else
 	include("evil_fungus/sv_mind.lua")
 	include("evil_fungus/sv_net.lua")
 	include("evil_fungus/sv_sleep.lua")
+	include("evil_fungus/sv_carriers.lua")
 end

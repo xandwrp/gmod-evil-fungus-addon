@@ -30,6 +30,7 @@ Someone put a scraping under a microscope once. Hexagons, all the way down.
 | Feels the ground move | Anything moving along the ground near the mat shakes its way through to it, further the faster it goes, and for props the heavier. People and animals get hunted where the shaking came from. Anything else, it goes over to look at. Off unless the vibration setting is up | done |
 | Smells you breathing | Breathers within smell range of the mat, with open air between, pull it toward where they are now. Running and being hurt carry further. Off unless the smell setting is up | done |
 | Spores | Fed well enough, it throws part of itself somewhere nearby and starts again there. Same fungus, so the patches find each other and merge. Anyone it can smell getting away gets one thrown at their feet | done |
+| Hitchhikers | Evil Crawlers walk through it unharmed, since they don't bleed, but come out carrying spores. They shed a little dust while they carry them, and every so far they go one shakes loose and starts a patch wherever they are, well away from any mat. Whatever one still has on it when it dies comes up where it rotted. Needs Evil Crawling Thing | done |
 | Plants | Don't breathe out what it smells, so it only finds them by touch | done |
 | The air is nice | It gives off oxygen. The lure. Standing on it should feel good enough that you stay | open |
 | Hexagons | A faint cell pattern pressed into the mat's fibers | done |

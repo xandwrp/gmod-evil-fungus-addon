@@ -49,7 +49,9 @@ local function Build(panel)
 	for _, s in ipairs(EvilFungus.SETTINGS) do
 		local cv = GetConVar(s.convar)
 		local control
-		if s.max == 1 and not s.decimals then
+		if s.needs and not _G[s.needs] then
+			-- Only matters with the other addon installed.
+		elseif s.max == 1 and not s.decimals then
 			control = panel:CheckBox(s.label)
 			control:SetChecked(cv:GetBool())
 			control.OnChange = function(_, on) Send(s, on and 1 or 0) end
@@ -66,7 +68,7 @@ local function Build(panel)
 				if Settled(s) and not self:IsEditing() and math.abs(self:GetValue() - cv:GetFloat()) > 1e-3 then self:SetValue(cv:GetFloat()) end
 			end
 		end
-		control:SetTooltip(s.help)
+		if control then control:SetTooltip(s.help) end
 	end
 end
 

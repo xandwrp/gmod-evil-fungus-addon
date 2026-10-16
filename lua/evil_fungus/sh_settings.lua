@@ -31,6 +31,8 @@ EvilFungus.SETTINGS = {
 		help = "How much it branches off at random instead of heading somewhere, and how much its paths wander" },
 	{ name = "spores", default = 1, min = 0, max = 10, decimals = 2, label = "Spores",
 		help = "How often a well-fed fungus throws spores that start new patches nearby. At 0 it never does" },
+	{ name = "carried", default = 1, min = 0, max = 10, decimals = 2, label = "Carried spores", needs = "EvilCrawler",
+		help = "How easily Evil Crawlers walking through the mat pick up spores, and how often they shake one off somewhere else. At 0 they never carry any" },
 	{ name = "time_scale", default = 1, min = 0.1, max = 20, decimals = 1, label = "Time scale",
 		help = "Runs the fungus faster or slower than the game: growth, flow, sensing, putting people under and consuming them" },
 	{ name = "max_nodes", default = 2500, min = 200, max = 15000, decimals = 0, label = "Mat size",
@@ -48,7 +50,7 @@ EvilFungus.PRESETS = {
 	{ name = "normal", label = "Normal", values = {} },
 	{ name = "unhinged", label = "Unhinged", values = {
 		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15,
-		aggression = 20, learning = 4, smell = 3000, vibration = 2000, grow_cost = 0.25, sprawl = 2.5, spores = 8,
+		aggression = 20, learning = 4, smell = 3000, vibration = 2000, grow_cost = 0.25, sprawl = 2.5, spores = 8, carried = 4,
 		max_nodes = 6000, start_mass = 150, grow_speed = 3, flow_speed = 3,
 	} },
 }
