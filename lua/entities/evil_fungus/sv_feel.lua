@@ -4,6 +4,7 @@ local STANDING = 0.5
 local BOX_PAD = Vector(64, 64, 64)
 local MAX_PENDING = 32
 local WAVE_SPEED = 500
+local QUICKER = 1
 local WAVE_RANGE = 900
 local STEP_DISTANCE = 56
 local STILL_STEP = 2.5
@@ -35,7 +36,10 @@ local SHAKE_MIN = 40
 local SHAKE_MAX = 5
 local SHAKE_GAP = 8
 
-ENT.WAVE_SPEED = WAVE_SPEED
+-- Everything it feels gets through the mat faster once it's got more to think with.
+function ENT:WaveSpeed()
+	return WAVE_SPEED * EvilFungus.TimeScale() * (1 + QUICKER * self.Mind:Grasp())
+end
 
 local ai_ignoreplayers = GetConVar("ai_ignoreplayers")
 
@@ -163,7 +167,7 @@ function ENT:Feel(now)
 
 	for i = #self.Waves, 1, -1 do
 		local w = self.Waves[i]
-		if (now - w.start) * WAVE_SPEED > w.reach then table.remove(self.Waves, i) end
+		if (now - w.start) * w.speed > w.reach then table.remove(self.Waves, i) end
 	end
 end
 
@@ -179,11 +183,12 @@ function ENT:Tremor(node, strength, now, ent)
 		return not debugging and nearest < math.huge
 	end)
 
+	local speed = self:WaveSpeed()
 	if nearest < math.huge and #self.Pending < MAX_PENDING then
-		self.Pending[#self.Pending + 1] = { at = now + nearest / (WAVE_SPEED * EvilFungus.TimeScale()), ent = ent, node = node }
+		self.Pending[#self.Pending + 1] = { at = now + nearest / speed, ent = ent, node = node }
 	end
 	if debugging then
-		self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = reach }
+		self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = reach, speed = speed }
 	end
 end
 
@@ -289,7 +294,7 @@ function ENT:Shake(now)
 		end
 	end
 
-	local speed = WAVE_SPEED * EvilFungus.TimeScale()
+	local speed = self:WaveSpeed()
 	if prey.ent and #self.Pending < MAX_PENDING then
 		self.Pending[#self.Pending + 1] = { at = now + prey.d / speed, ent = prey.ent, node = prey.node, from = prey.pos }
 	elseif lure.ent and #self.Pending < MAX_PENDING then
@@ -300,7 +305,7 @@ end
 function ENT:Ripple(node, now)
 	if not self:Debugging() then return end
 	local dist = self.Mat:Distances({ [node] = 0 }, function(e) return e.len end, RIPPLE_RANGE)
-	self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = RIPPLE_RANGE }
+	self.Waves[#self.Waves + 1] = { dist = dist, start = now, reach = RIPPLE_RANGE, speed = self:WaveSpeed() }
 end
 
 -- Whatever the other half was feeling, holding or chasing, this half now is.

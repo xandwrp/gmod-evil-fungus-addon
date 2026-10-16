@@ -50,7 +50,7 @@ function ENT:DebugDraw(now)
 	end
 
 	for _, w in ipairs(self.Waves) do
-		local front = (now - w.start) * self.WAVE_SPEED
+		local front = (now - w.start) * w.speed
 		for node, d in pairs(w.dist) do
 			if not node.dead and math.abs(d - front) < WAVE_BAND then
 				debugoverlay.Cross(node.pos + node.normal * (LIFT + 2), 4, life, WAVE, true)
