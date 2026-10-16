@@ -62,7 +62,9 @@ local WRAP_R = { 4.5, 8 }
 local WRAP_THICK = 0.55
 local WRAP_CROWN = 4
 
-local LIMB_SIDES = 5
+local LIMB_SIDES = 6
+-- Rounded ends, as how far past the joint and how wide, so a part's ends close over and the joints run together.
+local CAP = { { 0.34, 0.94 }, { 0.71, 0.71 }, { 1, 0.08 } }
 local SHOWN = 0.02
 local THICK = {
 	{ "pelvis", 5 }, { "spine", 5.5 }, { "clavicle", 3 }, { "upperarm", 2.6 }, { "forearm", 2.2 },
@@ -345,7 +347,17 @@ local function Limbs(shapes, rag, c, up, light, S)
 			if a and b and a:DistToSqr(b) > 0.25 then
 				local rr = limb.thick * gone
 				local r, g, bl = Mix(S.ROOT, S.VEIN, gone * 0.5)
-				Shape(shapes, { a, b }, { rr, rr }, up, LIMB_SIDES, r, g, bl, light)
+				local dir = (b - a):GetNormalized()
+				local pts, radii = {}, {}
+				for i = #CAP, 1, -1 do
+					pts[#pts + 1], radii[#radii + 1] = a - dir * (rr * CAP[i][1]), rr * CAP[i][2]
+				end
+				pts[#pts + 1], radii[#radii + 1] = a, rr
+				pts[#pts + 1], radii[#radii + 1] = b, rr
+				for i = 1, #CAP do
+					pts[#pts + 1], radii[#radii + 1] = b + dir * (rr * CAP[i][1]), rr * CAP[i][2]
+				end
+				Shape(shapes, pts, radii, up, LIMB_SIDES, r, g, bl, light)
 			end
 		end
 	end
