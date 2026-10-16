@@ -16,6 +16,7 @@ local D_MAX = 10
 local D_GAIN = 0.06
 local D_DECAY = 0.004
 local EMPTY = 0.01
+local RISE_MIN = 0.1
 
 Mat.STEP = STEP
 Mat.D_FLOOR = D_FLOOR
@@ -24,7 +25,7 @@ Mat.EMPTY = EMPTY
 Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
-	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, nextId = 1 }, Mat)
+	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
@@ -37,6 +38,7 @@ local function Place(self, node)
 	self.nodes[node.id] = node
 	self.count = self.count + 1
 	if node.m > EMPTY then self.full[node] = true end
+	if node.air then self.air[node] = true end
 
 	local x, y, z = node.x, node.y, node.z
 	local key = Key(math.floor(x / CELL), math.floor(y / CELL), math.floor(z / CELL))
@@ -63,8 +65,8 @@ local function Unpack(node)
 	node.up = node.normal.z
 end
 
-function Mat:Add(pos, normal)
-	local node = { pos = pos, normal = normal, m = 0, edges = {} }
+function Mat:Add(pos, normal, height)
+	local node = { pos = pos, normal = normal, m = 0, edges = {}, air = height and true or nil, height = height or 0 }
 	Unpack(node)
 	Place(self, node)
 	if EvilFungus.Net then EvilFungus.Net.Node(node) end
@@ -74,7 +76,7 @@ end
 -- Takes over every strand of another mat, body and all, leaving it empty.
 function Mat:Absorb(other)
 	for _, node in pairs(other.nodes) do Place(self, node) end
-	other.nodes, other.cells, other.full, other.count = {}, {}, {}, 0
+	other.nodes, other.cells, other.full, other.air, other.count = {}, {}, {}, {}, 0
 	other.mins, other.maxs = nil, nil
 end
 
@@ -92,6 +94,7 @@ function Mat:Remove(node)
 		end
 	end
 	self.full[node] = nil
+	self.air[node] = nil
 	self.nodes[node.id] = nil
 	self.count = self.count - 1
 	node.dead = true
@@ -227,6 +230,21 @@ function Mat:Grow(from, dir, now, spacing)
 	return node
 end
 
+-- Straight out into open air, held up by nothing but the strand behind it.
+function Mat:Rise(from, dir, now)
+	local start = from.air and from.pos or from.pos + from.normal * LIFT
+	dir = dir:GetNormalized()
+	if not from.air and dir:Dot(from.normal) < RISE_MIN then return end
+	local pos = start + dir * STEP
+	if util.TraceLine({ start = start, endpos = pos + dir * LIFT, mask = MASK }).Hit then return end
+	if self:Crowded(pos, from.normal) then return end
+	if bit.band(util.PointContents(pos), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
+
+	local node = self:Add(pos, from.normal, from.height + 1)
+	self:Link(from, node, now)
+	return node
+end
+
 local function Push(h, d, v)
 	local n = h.n + 1
 	h.n = n
@@ -288,7 +306,10 @@ function Mat:Distances(sources, cost, limit, stop)
 end
 
 for colony in pairs(EvilFungus.Colonies or {}) do
-	for _, node in pairs(colony.Mat and colony.Mat.nodes or {}) do
+	local mat = colony.Mat
+	if mat and not mat.air then mat.air = {} end
+	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
+		node.height = node.height or 0
 	end
 end

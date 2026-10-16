@@ -41,6 +41,7 @@ local OVER_RADIUS = 72
 local HIGH = 32
 local BHOP = 1.1
 local SPY_LIFT = Vector(0, 0, 8)
+local AIR_RADIUS = 40
 
 -- Everything it feels gets through the mat faster once it's got more to think with.
 function ENT:WaveSpeed()
@@ -111,9 +112,19 @@ function ENT:Feel(now)
 	local touching = {}
 	if mat.mins then
 		local mins, maxs = mat.mins - BOX_PAD, mat.maxs + BOX_PAD
+		-- Off the ground, only strands it's put up in the air can get hold of you.
+		local aloft = next(mat.air) ~= nil
+		local noclip = self.Mind:Knows("noclip") > 0
 		local function Visit(ent)
-			if not ent:GetPos():WithinAABox(mins, maxs) or not ent:IsOnGround() or not self:Perceivable(ent) then return end
-			local node = mat:Nearest(ent:GetPos(), FEEL_RADIUS, function(n) return n.up > STANDING end)
+			local pos = ent:GetPos()
+			if not pos:WithinAABox(mins, maxs) then return end
+			local node
+			if ent:IsOnGround() then
+				if not self:Perceivable(ent) then return end
+				node = mat:Nearest(pos, FEEL_RADIUS, function(n) return n.up > STANDING and not n.air end)
+			elseif aloft and self:Perceivable(ent, noclip) then
+				node = mat:Nearest(ent:WorldSpaceCenter(), AIR_RADIUS, function(n) return n.air end)
+			end
 			if node then
 				local st = self.Touching[ent] or { walked = 0, still = now + STILL_STEP }
 				st.node = node
@@ -194,7 +205,7 @@ function ENT:Spy(touching, real)
 			elseif ply:GetMoveType() == MOVETYPE_WALK and ply:WaterLevel() < 2 and self:Perceivable(ply) then
 				local grounded = ply:IsOnGround()
 				local below = pos.z - (grounded and HIGH or 0)
-				local floor = mat:Nearest(pos - OVER, OVER_RADIUS, function(n) return n.up > STANDING and n.z < below end)
+				local floor = mat:Nearest(pos - OVER, OVER_RADIUS, function(n) return n.up > STANDING and not n.air and n.z < below end)
 				if floor and not util.TraceLine({ start = pos + SPY_LIFT, endpos = floor.pos + floor.normal * 4, mask = MASK_SOLID_BRUSHONLY }).Hit then
 					if grounded then
 						mind:Watch(ply, "high", real)
@@ -252,8 +263,11 @@ function ENT:Smell(now)
 	local mins, maxs = self.Mat.mins, self.Mat.maxs
 	local best, bestNode, bestScore
 	local function Sniff(ent)
-		if self.Touching[ent] or not self:Perceivable(ent) then return end
+		if self.Touching[ent] or not self:Perceivable(ent, true) then return end
 		local reach = range * Strength(ent, ent:GetVelocity():Length()) * Hurt(ent)
+		-- Someone flying about breathes like anyone else. It just has to know to check up there.
+		if ent:IsPlayer() and Noclipping(ent) then reach = reach * self.Mind:Knows("noclip") end
+		if reach <= 0 then return end
 		local breath = ent:EyePos()
 		local box = Vector(math.Clamp(breath.x, mins.x, maxs.x), math.Clamp(breath.y, mins.y, maxs.y), math.Clamp(breath.z, mins.z, maxs.z))
 		if box:DistToSqr(breath) > reach * reach then return end
@@ -364,7 +378,7 @@ function ENT:Adopt(other)
 end
 
 function ENT:Felt(ent, node, now, from)
-	if not IsValid(ent) or node.dead or not self:Perceivable(ent) then return end
+	if not IsValid(ent) or node.dead or not self:Perceivable(ent, self:Touches(ent)) then return end
 	local prey = self.Prey
 	if IsValid(prey) and prey ~= ent then
 		if self.Eating then return end

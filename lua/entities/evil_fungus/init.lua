@@ -33,6 +33,10 @@ local NEAR_GOAL = 96
 local LEAD_TIME = 1.5
 local HEADING_TIME = 0.6
 local LEAD_LIFT = Vector(0, 0, 16)
+local RISE_JITTER = 0.3
+local TUNNEL_HOLD = 2
+local AIR_HOLD = 10
+local AIR_DROP = 2
 local WEAVE_RATE = 6
 local WEAVE_RADIUS = 64
 local WEAVE_SPACING = 7
@@ -211,7 +215,7 @@ function ENT:PickTarget(now)
 	self.GoalStale = true
 
 	if self.Mat.count > PATROL_NODES and math.random() < PATROL_CHANCE then
-		self.Target = RandomNode(self.Mat.nodes).pos
+		self.Target = RandomNode(self.Mat.nodes, function(n) return not n.air end).pos
 		return
 	end
 
@@ -227,22 +231,67 @@ function ENT:PickTarget(now)
 	self.Target = self.Center
 end
 
+-- Up off the ground, it only knows to go after you as well as it knows the trick you're using.
+function ENT:Aloft(prey)
+	local mind = self.Mind
+	if prey:IsPlayer() and prey:GetMoveType() == MOVETYPE_NOCLIP then return mind:Knows("noclip") end
+	if not prey:IsOnGround() then return math.max(mind:Knows("jump"), mind:Knows("bhop")) end
+	local ground = prey:GetGroundEntity()
+	if IsValid(ground) and not ground:IsWorld() then return mind:Knows("high") end
+	return 0
+end
+
+local function Tip(mat, node)
+	for _, e in ipairs(node.edges) do
+		local other = mat:Other(e, node)
+		if other.air and other.height > node.height then return false end
+	end
+	return true
+end
+
+-- With nothing up there left to reach for, the strands in the air let go from the tips back and run down into the rest.
+function ENT:Retract()
+	local mat, dropped = self.Mat, 0
+	for node in pairs(mat.air) do
+		if Tip(mat, node) then
+			local low
+			for _, e in ipairs(node.edges) do
+				local other = mat:Other(e, node)
+				if not low or other.height < low.height then low = other end
+			end
+			if low then mat:SetMass(low, low.m + node.m) end
+			mat:Remove(node)
+			dropped = dropped + 1
+			if dropped >= AIR_DROP then return end
+		end
+	end
+end
+
 function ENT:Decide(now)
 	self:Settle()
+	if next(self.Mat.air) and now - (self.TunnelAt or -math.huge) > AIR_HOLD then self:Retract() end
 
 	local prey, node = self.Prey, self.PreyNode
 	local memory = LOSE_TIME * math.max(0.25, EvilFungus.Setting("aggression")) / EvilFungus.TimeScale()
-	local still = IsValid(prey) and node and not node.dead and self:Perceivable(prey)
+	local known = IsValid(prey) and (self:Touches(prey) or self.Smelled == prey)
+	local still = IsValid(prey) and node and not node.dead and self:Perceivable(prey, known)
 	self.Hunting = still and now - self.FeltAt < memory
 	if still and not self.Hunting and prey:IsPlayer() then self.Mind:Watch(prey, "outrun", 1) end
 	if not self.Hunting then
 		self.Prey, self.PreyNode, self.PreyFrom, self.Eating = nil, nil, nil, nil
 	end
 
+	local aloft = self.Hunting and known and self:Aloft(prey) or 0
+	if aloft > 0 then
+		self.Tunnel, self.TunnelAt = aloft, now
+	elseif not self.Hunting or now - (self.TunnelAt or -math.huge) > TUNNEL_HOLD then
+		self.Tunnel = 0
+	end
+
 	local goal
 	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
-		self.Target = (self:Touches(prey) or self.Smelled == prey) and self:Lead(prey, now) or self.PreyFrom or node.pos
+		self.Target = known and self:Lead(prey, now) or self.PreyFrom or node.pos
 		goal = self:Closest(self.Target) or node
 		self.PreyNode = goal
 	elseif self.Tending then
@@ -366,12 +415,13 @@ function ENT:Patient()
 	return best
 end
 
-function ENT:Sprout(from, dir, now, spacing, payer)
+function ENT:Sprout(from, dir, now, spacing, payer, rise)
 	payer = payer or from
 	local cost = GROW_COST * EvilFungus.Setting("grow_cost")
 	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
 	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
-	local node = self.Mat:Grow(from, dir, now, spacing)
+	local node
+	if rise then node = self.Mat:Rise(from, dir, now) else node = self.Mat:Grow(from, dir, now, spacing) end
 	if not node then return end
 	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
 	local goal, target = self.Goal, self.Target
@@ -430,16 +480,18 @@ function ENT:Spread(dt, now)
 	end
 
 	-- New strands start empty, so the edge it grows from only changes once a strand's cost takes it under.
+	-- Only what's on a surface wanders off. What's up in the air is only ever there to reach something.
 	local frontier, best, bestD2 = nil, nil, math.huge
 	local target = self.Target
+	local tunnel = self.Hunting and self.Tunnel or 0
 	local function Scan()
 		frontier, best, bestD2 = {}, nil, math.huge
 		local tx, ty, tz
 		if target then tx, ty, tz = target:Unpack() end
 		for node in pairs(mat.full) do
 			if Frontier(node) then
-				frontier[#frontier + 1] = node
-				if tx then
+				if not node.air then frontier[#frontier + 1] = node end
+				if tx and (tunnel > 0 or not node.air) then
 					local dx, dy, dz = node.x - tx, node.y - ty, node.z - tz
 					local d2 = dx * dx + dy * dy + dz * dz
 					if d2 < bestD2 then best, bestD2 = node, d2 end
@@ -452,8 +504,11 @@ function ENT:Spread(dt, now)
 		self.ReachDebt = self.ReachDebt - 1
 		if not frontier or best and not Frontier(best) then Scan() end
 		if best and bestD2 > ARRIVE * ARRIVE then
-			local dir = (target - best.pos):GetNormalized() + VectorRand() * (REACH_JITTER * (0.5 + 0.5 * sprawl))
-			self:Sprout(best, dir, now)
+			-- Going up after something in the air, it heads straight out through it, and climbs whatever's in the way.
+			local rise = tunnel > 0 and (best.air or math.random() < tunnel)
+			local jitter = REACH_JITTER * (0.5 + 0.5 * sprawl) * (rise and RISE_JITTER or 1)
+			local dir = (target - best.pos):GetNormalized() + VectorRand() * jitter
+			if not (rise and self:Sprout(best, dir, now, nil, nil, true)) and not self.Absorbed then self:Sprout(best, dir, now) end
 			if self.Absorbed then return end
 		end
 	end

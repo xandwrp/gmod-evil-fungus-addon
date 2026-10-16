@@ -65,7 +65,9 @@ function ENT:DebugDraw(now)
 	end
 	local state = self.Eating and "feeding" or self.Hunting and "hunting" or self.Tending and "tending" or self.Resting and "resting" or "roaming"
 	local at, r = self.Center + self.Up * 24, self.CostReport
-	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d"):format(state, self.Body, mat.count), life, TARGET)
+	local air = 0
+	for _ in pairs(mat.air) do air = air + 1 end
+	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d  air %d  tunnel %.2f"):format(state, self.Body, mat.count, air, self.Tunnel or 0), life, TARGET)
 	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  feel %.2f"):format(
 		r.decide or 0, r.flow or 0, r.grow or 0, r.feel or 0), life, TARGET)
 	local mind = self.Mind

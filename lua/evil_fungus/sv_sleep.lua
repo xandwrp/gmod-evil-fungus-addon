@@ -235,12 +235,12 @@ local function Nest(s)
 	local from = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
 	local list = {}
 	fungus.Mat:Near(from, NEST_SEARCH, function(node, d2)
-		if not s.rejected[node] then list[#list + 1] = { node = node, d2 = d2 } end
+		if not s.rejected[node] and not node.air then list[#list + 1] = { node = node, d2 = d2 } end
 	end)
 	table.sort(list, function(a, b) return a.d2 < b.d2 end)
 	if #list == 0 then
 		local far = fungus:Closest(from)
-		if far and not s.rejected[far] and far.pos:DistToSqr(from) < NEST_FAR * NEST_FAR then list[1] = { node = far } end
+		if far and not far.air and not s.rejected[far] and far.pos:DistToSqr(from) < NEST_FAR * NEST_FAR then list[1] = { node = far } end
 	end
 
 	local best, bestScore
