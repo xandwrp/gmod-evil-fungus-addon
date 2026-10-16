@@ -35,6 +35,12 @@ local SHAKE_SPEED = 200
 local SHAKE_MIN = 40
 local SHAKE_MAX = 5
 local SHAKE_GAP = 8
+local SPY_PAD = Vector(256, 256, 256)
+local OVER = Vector(0, 0, 64)
+local OVER_RADIUS = 72
+local HIGH = 32
+local BHOP = 1.1
+local SPY_LIFT = Vector(0, 0, 8)
 
 -- Everything it feels gets through the mat faster once it's got more to think with.
 function ENT:WaveSpeed()
@@ -52,13 +58,17 @@ function ENT:InitFeel()
 	self.NextShake = 0
 end
 
-function ENT:Perceivable(ent)
+local function Noclipping(ply)
+	return ply:GetMoveType() == MOVETYPE_NOCLIP and not ply:InVehicle()
+end
+
+function ENT:Perceivable(ent, noclip)
 	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep then return false end
 	if ent:IsPlayer() then
 		return EvilFungus.Setting("attack_players") > 0
 			and not (ai_ignoreplayers and ai_ignoreplayers:GetBool())
 			and ent:Alive()
-			and not (ent:GetMoveType() == MOVETYPE_NOCLIP and not ent:InVehicle())
+			and (noclip or not Noclipping(ent))
 			and ent:GetObserverMode() == OBS_MODE_NONE
 	end
 	if Creature(ent) then
@@ -135,6 +145,7 @@ function ENT:Feel(now)
 		if not touching[ent] then self:Release(ent) end
 	end
 	self.Touching = touching
+	if mat.mins then self:Spy(touching, real) end
 	self:Breathe(dt)
 	self:Smell(now)
 	self:Shake(now)
@@ -168,6 +179,33 @@ function ENT:Feel(now)
 	for i = #self.Waves, 1, -1 do
 		local w = self.Waves[i]
 		if (now - w.start) * w.speed > w.reach then table.remove(self.Waves, i) end
+	end
+end
+
+-- How everyone near it who isn't on it is staying off it, for whatever it can make of that.
+function ENT:Spy(touching, real)
+	local mat, mind = self.Mat, self.Mind
+	local mins, maxs = mat.mins - SPY_PAD, mat.maxs + SPY_PAD
+	for _, ply in ipairs(player.GetAll()) do
+		local pos = ply:GetPos()
+		if not touching[ply] and pos:WithinAABox(mins, maxs) then
+			if Noclipping(ply) then
+				if self:Perceivable(ply, true) then mind:Watch(ply, "noclip", real) end
+			elseif ply:GetMoveType() == MOVETYPE_WALK and ply:WaterLevel() < 2 and self:Perceivable(ply) then
+				local grounded = ply:IsOnGround()
+				local below = pos.z - (grounded and HIGH or 0)
+				local floor = mat:Nearest(pos - OVER, OVER_RADIUS, function(n) return n.up > STANDING and n.z < below end)
+				if floor and not util.TraceLine({ start = pos + SPY_LIFT, endpos = floor.pos + floor.normal * 4, mask = MASK_SOLID_BRUSHONLY }).Hit then
+					if grounded then
+						mind:Watch(ply, "high", real)
+					else
+						local vel = ply:GetVelocity()
+						vel.z = 0
+						mind:Watch(ply, vel:Length() > ply:GetRunSpeed() * BHOP and "bhop" or "jump", real)
+					end
+				end
+			end
+		end
 	end
 end
 

@@ -232,8 +232,9 @@ function ENT:Decide(now)
 
 	local prey, node = self.Prey, self.PreyNode
 	local memory = LOSE_TIME * math.max(0.25, EvilFungus.Setting("aggression")) / EvilFungus.TimeScale()
-	self.Hunting = IsValid(prey) and node and not node.dead and now - self.FeltAt < memory
-		and self:Perceivable(prey)
+	local still = IsValid(prey) and node and not node.dead and self:Perceivable(prey)
+	self.Hunting = still and now - self.FeltAt < memory
+	if still and not self.Hunting and prey:IsPlayer() then self.Mind:Watch(prey, "outrun", 1) end
 	if not self.Hunting then
 		self.Prey, self.PreyNode, self.PreyFrom, self.Eating = nil, nil, nil, nil
 	end

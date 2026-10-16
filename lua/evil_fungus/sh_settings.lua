@@ -23,6 +23,8 @@ EvilFungus.SETTINGS = {
 		help = "How far off the mat it smells people and animals breathing and goes for where they are. Running and being hurt carry further, walls stop it. At 0 it only feels what walks on it" },
 	{ name = "vibration", default = 0, min = 0, max = 4000, decimals = 0, label = "Vibration",
 		help = "How far through the ground it feels something moving along it at a walk. Faster and heavier carry further. People and animals get hunted where it came from, anything else it goes to look at. At 0 it only feels what walks on it" },
+	{ name = "learning", default = 1, min = 0, max = 10, decimals = 2, label = "Learning",
+		help = "How much smarter every head it takes in makes it, and how much it learns from watching and eating people get away. At 0 it never gets any smarter" },
 	{ name = "grow_cost", default = 1, min = 0, max = 3, decimals = 2, label = "Growth cost",
 		help = "How much body each new strand costs. At 0 spreading is free and it never runs out" },
 	{ name = "sprawl", default = 1, min = 0, max = 5, decimals = 2, label = "Sprawl",
@@ -46,7 +48,7 @@ EvilFungus.PRESETS = {
 	{ name = "normal", label = "Normal", values = {} },
 	{ name = "unhinged", label = "Unhinged", values = {
 		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15,
-		aggression = 20, smell = 3000, vibration = 2000, grow_cost = 0.25, sprawl = 2.5, spores = 8,
+		aggression = 20, learning = 4, smell = 3000, vibration = 2000, grow_cost = 0.25, sprawl = 2.5, spores = 8,
 		max_nodes = 6000, start_mass = 150, grow_speed = 3, flow_speed = 3,
 	} },
 }

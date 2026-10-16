@@ -340,6 +340,22 @@ local function Posed(s)
 end
 
 -- Only something from outside gets a sleeper back: a hand on them, a hit, a blast. Flinging them about itself doesn't count.
+-- Whoever last laid a hand on a sleeper, or hit one, or threw something at one.
+local function Touched(s, by)
+	if IsValid(by) and by:IsPlayer() then s.by = by end
+end
+
+local function Thrower(ent)
+	if ent:IsPlayer() then return ent end
+	return ent.GetPhysicsAttacker and ent:GetPhysicsAttacker(HIT_GRACE)
+end
+
+local function Rescued(s)
+	local fungus = s.fungus
+	if IsValid(s.by) and IsValid(fungus) then fungus.Mind:Watch(s.by, "rescue", 1) end
+	Sleep.Free(s)
+end
+
 local function Torn(s, dt, now)
 	local pelvis = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
 	if pelvis:DistToSqr(Target(s, "pelvis", s.carry)) > EXTRACT * EXTRACT and Tugged(s, now) then
@@ -504,6 +520,7 @@ end
 function Sleep.Hold(rag, owner, fungus, s)
 	s.rag, s.owner, s.rejected, s.loose, s.arrived = rag, owner, {}, 1, 0
 	s.brain = EvilFungus.Brain(owner)
+	s.profile = owner:IsPlayer() and EvilFungus.Profile(owner) or nil
 	s.grips, s.biped = Grips(rag)
 	s.size = 1
 	if s.biped then
@@ -518,13 +535,16 @@ function Sleep.Hold(rag, owner, fungus, s)
 	rag:AddCallback("PhysicsCollide", function(ent, data)
 		local held = Sleep.sleepers[ent]
 		local hit = data.HitEntity
-		if held and IsValid(hit) and not hit:IsWorld() and data.Speed > SLAM_SPEED then held.hitAt = CurTime() end
+		if held and IsValid(hit) and not hit:IsWorld() and data.Speed > SLAM_SPEED then
+			held.hitAt = CurTime()
+			Touched(held, Thrower(hit))
+		end
 	end)
 	if not Nest(s) then Sleep.Free(s) end
 end
 
 local function Posing(s, dt, now)
-	if Torn(s, dt, now) then return Sleep.Free(s) end
+	if Torn(s, dt, now) then return Rescued(s) end
 	local floor = s.nest.pos
 	local d = floor - s.carry
 	local step = CARRY_SPEED * dt
@@ -562,7 +582,7 @@ hook.Add("Tick", "EvilFungusSleep", function()
 		elseif s.stage == POSING then
 			if s.nest and not s.nest.dead and IsValid(s.fungus) then Posing(s, dt, now) else Sleep.Free(s) end
 		elseif s.stage == CONSUMING then
-			if Torn(s, dt, now) then Sleep.Free(s) else Steer(s, dt) end
+			if Torn(s, dt, now) then Rescued(s) else Steer(s, dt) end
 		end
 	end
 end)
@@ -589,7 +609,10 @@ local function Digest(s, now)
 	s.fed = due
 	if k >= 1 then
 		s.done = true
-		if IsValid(fungus) then fungus.Mind:Keep(s.brain) end
+		if IsValid(fungus) then
+			fungus.Mind:Keep(s.brain)
+			if s.profile then fungus.Mind:Learn(s.profile) end
+		end
 	end
 end
 
@@ -695,15 +718,21 @@ hook.Add("PhysgunPickup", "EvilFungusSleep", function(_, ent) if Locked(ent) the
 hook.Add("GravGunPickupAllowed", "EvilFungusSleep", function(_, ent) if Locked(ent) then return false end end)
 hook.Add("CanTool", "EvilFungusSleep", function(_, tr) if IsValid(tr.Entity) and Held(tr.Entity) then return false end end)
 hook.Add("CanProperty", "EvilFungusSleep", function(_, _, ent) if Held(ent) then return false end end)
-hook.Add("EntityTakeDamage", "EvilFungusSleep", function(ent)
+hook.Add("EntityTakeDamage", "EvilFungusSleep", function(ent, dmg)
 	if ent.EvilFungusAsleep or Locked(ent) then return true end
 	local s = Sleep.sleepers[ent]
-	if s then s.hitAt = CurTime() end
+	if s then
+		s.hitAt = CurTime()
+		Touched(s, dmg:GetAttacker())
+	end
 end)
 
-local function Grabbed(_, ent)
+local function Grabbed(ply, ent)
 	local s = Sleep.sleepers[ent]
-	if s then s.gripped = true end
+	if s then
+		s.gripped = true
+		Touched(s, ply)
+	end
 end
 
 local function Dropped(_, ent)
@@ -714,9 +743,12 @@ local function Dropped(_, ent)
 	end
 end
 
-local function Punted(_, ent)
+local function Punted(ply, ent)
 	local s = Sleep.sleepers[ent]
-	if s then s.hitAt = CurTime() end
+	if s then
+		s.hitAt = CurTime()
+		Touched(s, ply)
+	end
 end
 
 hook.Add("OnPhysgunPickup", "EvilFungusSleep", Grabbed)

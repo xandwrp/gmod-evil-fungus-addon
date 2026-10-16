@@ -1,10 +1,13 @@
 EvilFungus = EvilFungus or {}
+EvilFungus.Profiles = EvilFungus.Profiles or {}
 
 local CONSUMING, KEPT = EvilFungus.CONSUMING, EvilFungus.KEPT
 
 local UPDATE = 1
 local PLAYER_BRAIN = 1
 local NPC_BRAIN = 0.1
+local SKILL_MAX = 2
+local WATCH = 0.1
 
 -- How much thinking each kind of head is good for, next to a person's.
 local BRAINS = {}
@@ -17,9 +20,31 @@ for name, brain in pairs({
 	if _G[name] then BRAINS[_G[name]] = brain end
 end
 
+-- The ways people get away from it, and how much of each it takes to be good at it: seconds, or times for the last two.
+local TACTICS = { jump = 10, bhop = 10, noclip = 30, high = 30, outrun = 3, rescue = 1 }
+EvilFungus.TACTICS = TACTICS
+
+-- Everything one person has done to get away from it, since it last had them.
+function EvilFungus.Profile(ply)
+	local key = ply:IsBot() and "bot " .. ply:Nick() or ply:SteamID64()
+	local p = EvilFungus.Profiles[key]
+	if not p then
+		p = { did = {}, at = {} }
+		EvilFungus.Profiles[key] = p
+	end
+	return p
+end
+
+local function Skill(p)
+	local skill = 0
+	for tactic, full in pairs(TACTICS) do skill = skill + math.min(1, (p.did[tactic] or 0) / full) end
+	return math.min(SKILL_MAX, skill)
+end
+
+-- Whoever was hardest to catch has the most worth having.
 function EvilFungus.Brain(ent)
 	if not IsValid(ent) then return 0 end
-	if ent:IsPlayer() then return PLAYER_BRAIN end
+	if ent:IsPlayer() then return PLAYER_BRAIN * (1 + Skill(EvilFungus.Profile(ent))) end
 	return ent:IsNPC() and BRAINS[ent:Classify()] or NPC_BRAIN
 end
 
@@ -28,12 +53,12 @@ Mind.__index = Mind
 EvilFungus.Mind = Mind
 
 function EvilFungus.NewMind()
-	return setmetatable({ kept = 0, wired = 0 }, Mind)
+	return setmetatable({ kept = 0, wired = 0, know = {} }, Mind)
 end
 
 -- Heads it's finished with count in full, for good. The rest only count as much as they're wired in.
 function Mind:Total()
-	return self.kept + self.wired
+	return (self.kept + self.wired) * EvilFungus.Setting("learning")
 end
 
 -- Each step up takes twice the heads the last one did.
@@ -46,14 +71,40 @@ function Mind:Grasp()
 	return 1 - 1 / (1 + self:Total())
 end
 
+-- How well it understands one way of getting away from it.
+function Mind:Knows(tactic)
+	return 1 - 1 / (1 + (self.know[tactic] or 0))
+end
+
 function Mind:Keep(brain)
 	self.kept = self.kept + brain
+end
+
+-- Someone getting away from it in front of it. Only once a tick, however many patches of it see.
+-- It takes a little from that, depending on how much it already understands.
+function Mind:Watch(ply, tactic, amount)
+	local p = EvilFungus.Profile(ply)
+	local now = CurTime()
+	if p.at[tactic] == now then return end
+	p.at[tactic] = now
+	p.did[tactic] = (p.did[tactic] or 0) + amount
+	self.know[tactic] = (self.know[tactic] or 0) + amount / TACTICS[tactic] * WATCH * self:Grasp()
+end
+
+-- Whatever someone knew about getting away from it, it knows once it's done with them. They start over.
+function Mind:Learn(p)
+	local learning = EvilFungus.Setting("learning")
+	for tactic, full in pairs(TACTICS) do
+		self.know[tactic] = (self.know[tactic] or 0) + math.min(1, (p.did[tactic] or 0) / full) * learning
+		p.did[tactic] = 0
+	end
 end
 
 -- Two of it that meet agree they were always the same, and remember everything either one did.
 function EvilFungus.Converge(keep, lose)
 	if keep == lose then return end
 	keep.kept, keep.wired = keep.kept + lose.kept, keep.wired + lose.wired
+	for tactic, k in pairs(lose.know) do keep.know[tactic] = (keep.know[tactic] or 0) + k end
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		if colony.Mind == lose then colony.Mind = keep end
 	end

@@ -70,4 +70,7 @@ function ENT:DebugDraw(now)
 		r.decide or 0, r.flow or 0, r.grow or 0, r.feel or 0), life, TARGET)
 	local mind = self.Mind
 	debugoverlay.EntityTextAtPosition(at, 2, ("mind %.2f  kept %.2f  wired %.2f"):format(mind:Level(), mind.kept, mind.wired), life, TARGET)
+	local knows = {}
+	for tactic in SortedPairs(EvilFungus.TACTICS) do knows[#knows + 1] = ("%s %.2f"):format(tactic, mind:Knows(tactic)) end
+	debugoverlay.EntityTextAtPosition(at, 3, "knows  " .. table.concat(knows, "  "), life, TARGET)
 end
