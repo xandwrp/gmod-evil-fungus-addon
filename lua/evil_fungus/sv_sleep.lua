@@ -16,27 +16,29 @@ local NEST_FAR = 400
 local NEST_CANDIDATES = 12
 local NEST_APART = 72
 local SUPPORT = 24
-local CARRY_SPEED = 80
+local CARRY_SPEED = 50
 local CARRY_LIFT = 10
-local GAIN = 12
-local MAX_SPEED = 420
-local RESPONSE = 20
-local STALL_TIME = 1.5
+local GAIN = 5
+local MAX_SPEED = 160
+local RESPONSE = 8
+local SPLAY_TIME = 2.5
+local STALL_TIME = 2
 local STALL_GAIN = 0.95
-local KICK = 1.2
-local KICK_JITTER = 35
+local KICK = 0.6
+local KICK_JITTER = 15
 local TORSO = { pelvis = true, chest = true, head = true }
+local CARRIED = { pelvis = true, chest = true }
 local FLIP_DOT = 0.5
-local FLIP_SPEED = 220
+local FLIP_SPEED = 90
 local TORSO_TOL, LIMB_TOL = 12, 18
 local FACE_UP = 0.6
 local POSED_FOR = 0.5
-local POSE_TIMEOUT = 15
+local POSE_TIMEOUT = 20
 local LOOSEN = 1.3
 local EXTRACT = 80
 local TORN_FOR = 0.35
 local HIT_GRACE = 2
-local TUG_GRIP = 2
+local TUG_GRIP = 3
 local SLAM_SPEED = 250
 local WAKE_AFTER = 10
 
@@ -55,7 +57,7 @@ local REST_TORSO = 30
 local CATCH_RADIUS = 64
 local LOWER_SPEED = 30
 local WRAP_HOLD = 2
-local WRAP_OUT = 12
+local WRAP_OUT = 6
 
 local STANDING_OFFSETS = { Vector(0, 0, 0), Vector(32, 0, 0), Vector(-32, 0, 0), Vector(0, 32, 0), Vector(0, -32, 0) }
 
@@ -67,16 +69,6 @@ local POSE = {
 	lhand = { 32, 27, 3, LIMB_TOL }, rhand = { 32, -27, 3, LIMB_TOL },
 	lknee = { -17, 10, 4, LIMB_TOL }, rknee = { -17, -10, 4, LIMB_TOL },
 	lfoot = { -33, 14, 3, LIMB_TOL }, rfoot = { -33, -14, 3, LIMB_TOL },
-}
-
--- Wound up against a strand in the air: upright along it, arms at the sides, legs together, front facing out.
-local WRAP = {
-	pelvis = { 0, 0, 0, TORSO_TOL }, chest = { 16, 0, 1, TORSO_TOL }, head = { 30, 0, 1, TORSO_TOL },
-	lshoulder = { 20, 8, 0, LIMB_TOL }, rshoulder = { 20, -8, 0, LIMB_TOL },
-	lelbow = { 10, 10, 1, LIMB_TOL }, relbow = { 10, -10, 1, LIMB_TOL },
-	lhand = { 0, 9, 2, LIMB_TOL }, rhand = { 0, -9, 2, LIMB_TOL },
-	lknee = { -17, 4, 0, LIMB_TOL }, rknee = { -17, -4, 0, LIMB_TOL },
-	lfoot = { -33, 3, 0, LIMB_TOL }, rfoot = { -33, -3, 0, LIMB_TOL },
 }
 
 local function Drowsy(ent, d)
@@ -212,8 +204,14 @@ local function HeadWay(s, up)
 	return Tangent(v, up)
 end
 
+-- Up on a strand it only has hold of them by the chest. Everything else hangs.
+local function Anchor(s)
+	return s.path and s.grips.chest and "chest" or "pelvis"
+end
+
 local function Target(s, key, at)
-	local o = (s.pose or POSE)[key]
+	if s.path then return at end
+	local o = POSE[key]
 	local lift = o[3] * s.size + CARRY_LIFT * (1 - s.arrived)
 	return at + s.along * (o[1] * s.size) + s.left * (o[2] * s.size) + s.up * lift
 end
@@ -285,25 +283,34 @@ local function Tugged(s, now)
 	return s.gripped or now - (s.hitAt or -math.huge) < HIT_GRACE
 end
 
+-- How hard it holds each part. It moves them by the trunk and lets the rest hang until they're down.
+local function Weight(s, key)
+	if s.path then return key == Anchor(s) and 1 or 0 end
+	if not s.biped or CARRIED[key] then return 1 end
+	local k = s.splay
+	return k * k * (3 - 2 * k)
+end
+
 -- Arms out, legs out, back to the mat: the way it likes to keep things. Pull on one and it pulls back harder.
 local function Steer(s, dt)
 	local at = s.carry
 	local rag = s.rag
 	local grip = Tugged(s, CurTime()) and TUG_GRIP or 1
-	local top = MAX_SPEED * grip
 	for key, index in pairs(s.grips) do
 		local phys = rag:GetPhysicsObjectNum(index)
-		if IsValid(phys) then
+		local w = Weight(s, key)
+		if w > 0 and IsValid(phys) then
 			local want = (Target(s, key, at) - phys:GetPos()) * (GAIN * grip)
 			local speed = want:Length()
+			local top = MAX_SPEED * grip * w
 			if speed > top then want = want * (top / speed) end
 			local vel = phys:GetVelocity()
-			phys:SetVelocity(vel + (want - vel) * math.min(1, RESPONSE * dt))
+			phys:SetVelocity(vel + (want - vel) * math.min(1, RESPONSE * w * dt))
 			phys:Wake()
 		end
 	end
 
-	if s.biped then
+	if s.biped and not s.path then
 		local facing = Facing(s)
 		if facing:Dot(s.up) < FLIP_DOT then
 			local axis = facing:Cross(s.up)
@@ -345,7 +352,7 @@ local function Unstick(s, now)
 end
 
 local function Posed(s)
-	if s.arrived < 1 then return false end
+	if s.splay < 1 then return false end
 	local at = s.carry
 	for key, index in pairs(s.grips) do
 		local tol = POSE[key][4] * s.loose
@@ -372,8 +379,9 @@ local function Rescued(s)
 end
 
 local function Torn(s, dt, now)
-	local pelvis = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
-	if pelvis:DistToSqr(Target(s, "pelvis", s.carry)) > EXTRACT * EXTRACT and Tugged(s, now) then
+	local key = Anchor(s)
+	local held = s.rag:GetPhysicsObjectNum(s.grips[key]):GetPos()
+	if held:DistToSqr(Target(s, key, s.carry)) > EXTRACT * EXTRACT and Tugged(s, now) then
 		s.tornFor = (s.tornFor or 0) + dt
 		return s.tornFor >= TORN_FOR
 	end
@@ -551,10 +559,9 @@ local function Hang(s)
 	end
 
 	local first = path[1]
-	s.path, s.leg, s.pose, s.arrived, s.wrapAt = path, 1, WRAP, 1, CurTime()
-	s.along = Vector(first.normal)
-	s.up = Tangent(from - first.pos, s.along)
-	s.left = s.along:Cross(s.up)
+	s.path, s.leg, s.wrapAt = path, 1, CurTime()
+	s.carry = s.rag:GetPhysicsObjectNum(s.grips[Anchor(s)]):GetPos()
+	s.up = Tangent(s.carry - first.pos, first.normal)
 	s.nest = first
 	s.rag:SetNW2Vector(EvilFungus.NEST_VAR, first.pos)
 	s.rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, s.up)
@@ -563,7 +570,7 @@ local function Hang(s)
 end
 
 function Sleep.Hold(rag, owner, fungus, s)
-	s.rag, s.owner, s.rejected, s.loose, s.arrived = rag, owner, {}, 1, 0
+	s.rag, s.owner, s.rejected, s.loose, s.arrived, s.splay = rag, owner, {}, 1, 0, 0
 	s.brain = EvilFungus.Brain(owner)
 	s.profile = owner:IsPlayer() and EvilFungus.Profile(owner) or nil
 	s.grips, s.biped = Grips(rag)
@@ -590,7 +597,8 @@ function Sleep.Hold(rag, owner, fungus, s)
 end
 
 local function Land(s, now)
-	s.path, s.pose, s.arrived = nil, nil, 0
+	s.path, s.arrived, s.splay = nil, 0, 0
+	s.carry = s.rag:GetPhysicsObjectNum(s.grips.pelvis):GetPos()
 	s.rag:SetNW2Float(EvilFungus.LANDED_VAR, now)
 	SetStage(s, POSING)
 	if not Nest(s) then Sleep.Free(s) end
@@ -634,8 +642,9 @@ local function Posing(s, dt, now)
 	else
 		s.carry = s.carry + d:GetNormalized() * step
 	end
+	if s.arrived >= 1 then s.splay = math.min(1, s.splay + dt / SPLAY_TIME) end
 	Steer(s, dt)
-	if s.arrived >= 1 then Unstick(s, now) end
+	if s.splay >= 1 then Unstick(s, now) end
 
 	if Posed(s) then
 		s.okFor = s.okFor + dt

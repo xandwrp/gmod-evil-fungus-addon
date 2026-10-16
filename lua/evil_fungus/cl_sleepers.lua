@@ -110,6 +110,7 @@ local function Cache(rag)
 	end
 	if #c.grips == 0 then c.grips[1] = 0 end
 	c.pelvis = rag:LookupBone(EvilFungus.HOLD_BONES.pelvis) or 0
+	c.chest = rag:LookupBone(EvilFungus.HOLD_BONES.chest) or c.pelvis
 	c.lfoot, c.rfoot = rag:LookupBone(EvilFungus.HOLD_BONES.lfoot), rag:LookupBone(EvilFungus.HOLD_BONES.rfoot)
 	local eyes = rag:LookupAttachment("eyes")
 	c.eyes = eyes and eyes > 0 and eyes or nil
@@ -484,7 +485,12 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 					elseif stage == CONSUMING then
 						grown = 1 - math.Clamp(since / ARM_SINK, 0, 1)
 					end
-					if grown > 0 then
+					-- Still up on a strand: held by the chest, nothing else.
+					local hanging = rag:GetNW2Float(EvilFungus.WRAP_VAR, 0) > 0 and rag:GetNW2Float(EvilFungus.LANDED_VAR, 0) <= 0
+					if hanging then
+						local to = rag:GetBonePosition(c.chest)
+						if to and grown > 0 then Arm(shapes, nest, to, up, grown, now, light, S) end
+					elseif grown > 0 then
 						for _, bone in ipairs(c.grips) do
 							local to = rag:GetBonePosition(bone)
 							if to then Arm(shapes, Floor(to, nest, up), to, up, grown, now, light, S) end
@@ -492,8 +498,10 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 					end
 					if stage == POSING or stage == CONSUMING then
 						Wrap(shapes, rag, c, clock, light, S)
-						if close then Fibers(shapes, rag, c, nest, up, t, now, light) end
-						Wires(shapes, rag, c, nest, up, t, light, S)
+						if not hanging then
+							if close then Fibers(shapes, rag, c, nest, up, t, now, light) end
+							Wires(shapes, rag, c, nest, up, t, light, S)
+						end
 					end
 					if stage == CONSUMING then
 						Vein(shapes, rag, c, nest, up, now, light, S)
