@@ -25,11 +25,15 @@ local LIFT = 0.45
 local BEND = 0.35
 local WIGGLE = 0.12
 local DRAW_RANGE = 6000
-local BUILD_BUDGET = 400
+local BUILD_MS = 1.5
 local MAX_CHUNK_EDGES = 1500
-local BODY_BUDGET = 120
+local BODY_MS = 1.5
 local BODY_NODES = 500
-local BODY_LOD = { { 1200, 6, 2 }, { 3000, 4, 1 }, { math.huge, 3, 1 } }
+local BODY_CELL = 48
+local BODY_PICK = 0.1
+local STRAIGHT = 0.3
+-- Out to how far, how many sides and bends a strand of body gets, and how often it's rebuilt to pulse.
+local BODY_LOD = { { 1200, 6, 2, 0.1 }, { 3000, 4, 1, 0.25 }, { math.huge, 3, 1, 0.5 } }
 local BODY_R = 2.2
 local BODY_SHOW = 6
 local BODY_GONE = 0.01
@@ -76,6 +80,10 @@ for _, chunk in pairs(EvilFungus.Client and EvilFungus.Client.chunks or {}) do
 	chunk.mesh, chunk.bodyMesh, chunk.bodyBuilt = nil, nil, nil
 	EvilFungus.Client.Stale(chunk, 0)
 end
+for _, cell in pairs(EvilFungus.Client and EvilFungus.Client.bodyCells or {}) do
+	if cell.bodyMesh then cell.bodyMesh:Destroy() end
+	cell.bodyMesh, cell.bodyBuilt = nil, nil
+end
 for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
 	if rag.EvilFungusMesh then
 		rag.EvilFungusMesh:Destroy()
@@ -97,44 +105,44 @@ local function Trig(sides)
 	return t
 end
 
-local scratch, scratchN = Vector(), Vector()
-local rx, ry, rz, rs = { {}, {} }, { {}, {} }, { {}, {} }, { {}, {} }
-local nx, ny, nz, rv = { {}, {} }, { {}, {} }, { {}, {} }, {}
+-- Every ring vertex goes into two to four quads, so its position, normal and colour are worked out once, as the ring is laid.
+local rp, rn, rr, rg, rb, rv = { {}, {} }, { {}, {} }, { {}, {} }, { {}, {} }, { {}, {} }, {}
+local Position, Normal, TexCoord, Colour, Advance = mesh.Position, mesh.Normal, mesh.TexCoord, mesh.Color, mesh.AdvanceVertex
 
-local function Vert(ring, k, u, cr, cg, cb)
-	scratch:SetUnpacked(rx[ring][k], ry[ring][k], rz[ring][k])
-	mesh.Position(scratch)
-	scratchN:SetUnpacked(nx[ring][k], ny[ring][k], nz[ring][k])
-	mesh.Normal(scratchN)
-	mesh.TexCoord(0, u, rv[ring])
-	local s = rs[ring][k]
-	mesh.Color(math.min(255, cr * s), math.min(255, cg * s), math.min(255, cb * s), 255)
-	mesh.AdvanceVertex()
+local function Vert(ring, k, u)
+	Position(rp[ring][k])
+	Normal(rn[ring][k])
+	TexCoord(0, u, rv[ring])
+	Colour(rr[ring][k], rg[ring][k], rb[ring][k], 255)
+	Advance()
 end
 
 -- The texture wraps once around a strand and repeats along it once per circumference, so wrinkles keep their shape on thick and thin.
-local function Quads(prev, ring, sides, cr, cg, cb)
+local function Quads(prev, ring, sides)
 	for k = 0, sides - 1 do
 		local u, u2 = k / sides, (k + 1) / sides
 		local k2 = (k + 1) % sides
-		Vert(prev, k, u, cr, cg, cb)
-		Vert(prev, k2, u2, cr, cg, cb)
-		Vert(ring, k2, u2, cr, cg, cb)
-		Vert(ring, k, u, cr, cg, cb)
+		Vert(prev, k, u)
+		Vert(prev, k2, u2)
+		Vert(ring, k2, u2)
+		Vert(ring, k, u)
 	end
 end
 
-local function Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, r, light, tr, sides)
-	local X, Y, Z, S = rx[ring], ry[ring], rz[ring], rs[ring]
-	local NX, NY, NZ = nx[ring], ny[ring], nz[ring]
+local function Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, r, light, tr, sides, cr, cg, cb)
+	local P, N, R, G, B = rp[ring], rn[ring], rr[ring], rg[ring], rb[ring]
 	for k = 0, sides - 1 do
 		local c, s = tr.c[k], tr.s[k]
 		local ox, oy, oz = vx * c + wx * s, vy * c + wy * s, vz * c + wz * s
-		NX[k], NY[k], NZ[k] = ox, oy, oz
-		X[k] = px + ox * r
-		Y[k] = py + oy * r
-		Z[k] = pz + oz * r
-		S[k] = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
+		local p = P[k]
+		if not p then
+			p = Vector()
+			P[k], N[k] = p, Vector()
+		end
+		p:SetUnpacked(px + ox * r, py + oy * r, pz + oz * r)
+		N[k]:SetUnpacked(ox, oy, oz)
+		local shade = light * (SHADE_LOW + (1 - SHADE_LOW) * math.max(0, c))
+		R[k], G[k], B[k] = math.min(255, cr * shade), math.min(255, cg * shade), math.min(255, cb * shade)
 	end
 end
 
@@ -197,8 +205,8 @@ local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
 		v = v + math.sqrt((px - lx) ^ 2 + (py - ly) ^ 2 + (pz - lz) ^ 2) * vScale
 		lx, ly, lz = px, py, pz
 		rv[ring] = v
-		Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, ra * o + rb * t, la * o + lb * t, tr, sides)
-		if seg > 0 then Quads(3 - ring, ring, sides, cr, cg, cb) end
+		Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, ra * o + rb * t, la * o + lb * t, tr, sides, cr, cg, cb)
+		if seg > 0 then Quads(3 - ring, ring, sides) end
 	end
 end
 
@@ -234,8 +242,8 @@ local function Polyline(pts, radii, up, sides, cr, cg, cb, light)
 		local ring = i % 2 + 1
 		if i > 1 then v = v + pt:Distance(pts[i - 1]) * vScale end
 		rv[ring] = v
-		Ring(ring, pt.x, pt.y, pt.z, vx, vy, vz, wx, wy, wz, radii[i], light, tr, sides)
-		if i > 1 then Quads(3 - ring, ring, sides, cr, cg, cb) end
+		Ring(ring, pt.x, pt.y, pt.z, vx, vy, vz, wx, wy, wz, radii[i], light, tr, sides, cr, cg, cb)
+		if i > 1 then Quads(3 - ring, ring, sides) end
 	end
 end
 
@@ -255,11 +263,7 @@ local function Build(chunk)
 	end
 	if chunk.count <= 0 then
 		EvilFungus.Client.chunks[chunk.key] = nil
-		if chunk.bodyMesh then
-			chunk.bodyMesh:Destroy()
-			chunk.bodyMesh = nil
-		end
-		return 0
+		return
 	end
 
 	local list = {}
@@ -282,33 +286,39 @@ local function Build(chunk)
 	mesh.End()
 	if not ok then ErrorNoHalt("Evil Fungus couldn't build a mat chunk: ", err, "\n") end
 	chunk.mesh = im
-	return #list
 end
 
+-- Only so long a frame goes on rebuilding the mat. Whatever's left waits for the next one.
 local function Rebuild()
-	local now, budget = RealTime(), BUILD_BUDGET
+	local now, stop = RealTime(), SysTime() + BUILD_MS / 1000
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
 		if chunk.due and now >= chunk.due then
 			chunk.due = nil
-			budget = budget - Build(chunk)
-			if budget <= 0 then return end
+			Build(chunk)
+			if SysTime() >= stop then return end
 		end
 	end
 end
 
-local frame = 0
+local pass = {}
 local candidates = {}
-local bodyChunks = {}
+local cells, cellCount = {}, 0
 
-local function BodyEdge(e, sides, segments)
-	local a, b = e.a, e.b
-	local t = RealTime() * PULSE_RATE
-	local base = Radius(e)
-	local ra = base + BODY_R * math.sqrt(a.shown) * (1 + PULSE * math.sin(t + a.nid * PULSE_SPREAD))
-	local rb = base + BODY_R * math.sqrt(b.shown) * (1 + PULSE * math.sin(t + b.nid * PULSE_SPREAD))
-	local k = math.Clamp((a.shown + b.shown) / 8, 0, 1)
+local function BodyEdge(e, ra, rb, sides, segments)
+	local k = math.Clamp((e.a.shown + e.b.shown) / 8, 0, 1)
 	Tube(e, ra, rb, sides,
 		Lerp(k, BODY_THIN[1], BODY_THICK[1]), Lerp(k, BODY_THIN[2], BODY_THICK[2]), Lerp(k, BODY_THIN[3], BODY_THICK[3]), segments)
+end
+
+-- How far a strand bows away from straight at its middle.
+local function Bow(e)
+	local bow = e.bow
+	if bow then return bow end
+	local a, b = e.a, e.b
+	local len = a.pos:Distance(b.pos)
+	bow = 0.5 * ((1 - a.normal:Dot(b.normal)) * len * BEND + math.abs(Hash(e.eid) - 0.5) * 2 * WIGGLE * len)
+	e.bow = bow
+	return bow
 end
 
 local function Pick(node, M)
@@ -327,66 +337,93 @@ local function Pick(node, M)
 	return b1, b2, b3
 end
 
-local function Queue(e)
-	if not e or e.frame == frame or not e.chunk then return 0 end
-	e.frame = frame
-	local chunk = e.chunk
-	if chunk.bodyFrame ~= frame then
-		chunk.bodyFrame = frame
-		local list = chunk.bodyEdges or {}
-		for i = #list, 1, -1 do list[i] = nil end
-		chunk.bodyEdges = list
+-- The body's strands are kept in small cells of their own, so no one rebuild is ever very big.
+local function CellFor(e, M)
+	local cell = e.bodyCell
+	if cell then return cell end
+	local a, b = e.a.pos, e.b.pos
+	local ix = math.floor((a.x + b.x) * 0.5 / BODY_CELL)
+	local iy = math.floor((a.y + b.y) * 0.5 / BODY_CELL)
+	local iz = math.floor((a.z + b.z) * 0.5 / BODY_CELL)
+	local key = (ix + 512) * 1048576 + (iy + 512) * 1024 + (iz + 512)
+	cell = M.bodyCells[key]
+	if not cell then
+		cell = { list = {}, n = 0, center = Vector((ix + 0.5) * BODY_CELL, (iy + 0.5) * BODY_CELL, (iz + 0.5) * BODY_CELL) }
+		M.bodyCells[key] = cell
 	end
-	chunk.bodyEdges[#chunk.bodyEdges + 1] = e
-	bodyChunks[chunk] = true
+	e.bodyCell = cell
+	return cell
+end
+
+local function Queue(e, M)
+	if not e or e.pass == pass then return 0 end
+	e.pass = pass
+	local cell = CellFor(e, M)
+	if cell.pass ~= pass then
+		cell.pass = pass
+		cell.n = 0
+	end
+	cell.n = cell.n + 1
+	cell.list[cell.n] = e
 	return 1
 end
 
 local function Lod(d2)
 	for _, band in ipairs(BODY_LOD) do
-		if d2 < band[1] * band[1] then return band[2], band[3] end
+		if d2 < band[1] * band[1] then return band end
 	end
-	local last = BODY_LOD[#BODY_LOD]
-	return last[2], last[3]
+	return BODY_LOD[#BODY_LOD]
 end
 
-local function ForgetBody(chunk)
-	if chunk.bodyMesh then
-		chunk.bodyMesh:Destroy()
-		chunk.bodyMesh = nil
+local function ForgetBody(cell)
+	if cell.bodyMesh then
+		cell.bodyMesh:Destroy()
+		cell.bodyMesh = nil
 	end
+	cell.bodyBuilt = nil
 end
 
-local function BakeBody(chunk, eye)
-	ForgetBody(chunk)
-	chunk.bodyBuilt = RealTime()
-	local list = chunk.bodyFrame == frame and chunk.bodyEdges
-	if not list or #list == 0 then return 0 end
-	local sides, segments = Lod(chunk.center:DistToSqr(eye))
+local bodyRa, bodyRb, bodySegments = {}, {}, {}
+
+local function BakeBody(cell)
+	ForgetBody(cell)
+	cell.bodyBuilt = RealTime()
+	local list, n = cell.list, cell.n
+	for i = #list, n + 1, -1 do list[i] = nil end
+	if n == 0 then return end
+
+	-- A strand whose bow would be lost inside its own thickness is drawn straight.
+	local sides, most = cell.lod[2], cell.lod[3]
+	local t = RealTime() * PULSE_RATE
+	local quads = 0
+	for i = 1, n do
+		local e = list[i]
+		local a, b = e.a, e.b
+		local base = Radius(e)
+		local ra = base + BODY_R * math.sqrt(a.shown) * (1 + PULSE * math.sin(t + a.nid * PULSE_SPREAD))
+		local rb = base + BODY_R * math.sqrt(b.shown) * (1 + PULSE * math.sin(t + b.nid * PULSE_SPREAD))
+		local segments = most > 1 and Bow(e) < STRAIGHT * math.min(ra, rb) and 1 or most
+		bodyRa[i], bodyRb[i], bodySegments[i] = ra, rb, segments
+		quads = quads + sides * segments
+	end
+
 	local im = Mesh(FLESH)
-	mesh.Begin(im, MATERIAL_QUADS, #list * sides * segments)
+	mesh.Begin(im, MATERIAL_QUADS, quads)
 	local ok, err = pcall(function()
-		for _, e in ipairs(list) do BodyEdge(e, sides, segments) end
+		for i = 1, n do BodyEdge(list[i], bodyRa[i], bodyRb[i], sides, bodySegments[i]) end
 	end)
 	mesh.End()
 	if not ok then ErrorNoHalt("Evil Fungus couldn't build its body: ", err, "\n") end
-	chunk.bodyMesh = im
-	return #list
+	cell.bodyMesh = im
 end
 
-local order = {}
-
--- The body is the only part that moves, so it's kept per chunk and a few chunks are rebuilt each frame, stalest first.
-local function DrawBody(eye)
-	local M = EvilFungus.Client
+-- Which strands are body worth drawing, and where. What the server says about the body only changes a few times a second.
+local function Select(eye, M)
 	local r2, n = DRAW_RANGE * DRAW_RANGE, 0
 	for node in pairs(M.body) do
-		if node.shown > BODY_GONE then
-			local d2 = node.pos:DistToSqr(eye)
-			if d2 < r2 then
-				n = n + 1
-				candidates[n] = node
-			end
+		if node.shown > BODY_GONE and node.pos:DistToSqr(eye) < r2 then
+			n = n + 1
+			candidates[n] = node
 		end
 	end
 	for i = #candidates, n + 1, -1 do candidates[i] = nil end
@@ -396,36 +433,55 @@ local function DrawBody(eye)
 		n = BODY_NODES
 	end
 
-	frame = frame + 1
+	pass = {}
 	local queued = 0
 	for i = 1, n do
 		local e1, e2, e3 = Pick(candidates[i], M)
-		queued = queued + Queue(e1) + Queue(e2) + Queue(e3)
+		queued = queued + Queue(e1, M) + Queue(e2, M) + Queue(e3, M)
 	end
 	M.bodyDrawn = queued
 
+	for i = 1, cellCount do
+		if cells[i].pass ~= pass then ForgetBody(cells[i]) end
+		cells[i] = nil
+	end
 	local count = 0
-	for chunk in pairs(bodyChunks) do
-		if chunk.bodyFrame ~= frame then
-			ForgetBody(chunk)
-			bodyChunks[chunk] = nil
-		else
+	for _, cell in pairs(M.bodyCells) do
+		if cell.pass == pass then
 			count = count + 1
-			order[count] = chunk
+			cells[count] = cell
+			cell.lod = Lod(cell.center:DistToSqr(eye))
 		end
 	end
-	for i = #order, count + 1, -1 do order[i] = nil end
-	table.sort(order, function(a, b) return (a.bodyBuilt or -1) < (b.bodyBuilt or -1) end)
+	cellCount = count
+	table.sort(cells, function(a, b) return (a.bodyBuilt or -1) < (b.bodyBuilt or -1) end)
+end
 
-	local budget = BODY_BUDGET
-	for i = 1, count do
-		if budget <= 0 then break end
-		budget = budget - BakeBody(order[i], eye)
+local nextPick = 0
+
+-- The body is the only part that moves. Each cell is rebuilt to pulse every so often, nearer ones more often,
+-- stalest first and only for so long a frame.
+local function DrawBody(eye)
+	local M = EvilFungus.Client
+	local now = RealTime()
+	if now >= nextPick then
+		nextPick = now + BODY_PICK
+		Select(eye, M)
+	end
+
+	local stop = SysTime() + BODY_MS / 1000
+	for i = 1, cellCount do
+		local cell = cells[i]
+		if now - (cell.bodyBuilt or -math.huge) >= cell.lod[4] then
+			BakeBody(cell)
+			if SysTime() >= stop then break end
+		end
 	end
 
 	render.SetMaterial(FLESH)
-	for chunk in pairs(bodyChunks) do
-		if chunk.bodyMesh then chunk.bodyMesh:Draw() end
+	for i = 1, cellCount do
+		local im = cells[i].bodyMesh
+		if im then im:Draw() end
 	end
 end
 

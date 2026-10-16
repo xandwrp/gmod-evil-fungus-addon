@@ -4,15 +4,18 @@ local old = EvilFungus.Client
 if old then
 	for _, chunk in pairs(old.chunks) do
 		if chunk.mesh then chunk.mesh:Destroy() end
-		if chunk.bodyMesh then chunk.bodyMesh:Destroy() end
-		chunk.mesh, chunk.bodyMesh, chunk.count = nil, nil, 0
+		chunk.mesh, chunk.count = nil, 0
+	end
+	for _, cell in pairs(old.bodyCells or {}) do
+		if cell.bodyMesh then cell.bodyMesh:Destroy() end
+		cell.bodyMesh = nil
 	end
 end
 
-local M = { nodes = {}, edges = {}, chunks = {}, body = {} }
+local M = { nodes = {}, edges = {}, chunks = {}, body = {}, bodyCells = {} }
 EvilFungus.Client = M
 
-local CHUNK = 128
+local CHUNK = 64
 local LEVELS = 15
 local BODY_MAX_MASS = 8
 local GROWN = 0.4
@@ -23,7 +26,7 @@ M.LEVELS = LEVELS
 local function ChunkFor(e)
 	local mid = (e.a.pos + e.b.pos) * 0.5
 	local ix, iy, iz = math.floor(mid.x / CHUNK), math.floor(mid.y / CHUNK), math.floor(mid.z / CHUNK)
-	local key = (ix + 128) * 65536 + (iy + 128) * 256 + (iz + 128)
+	local key = (ix + 512) * 1048576 + (iy + 512) * 1024 + (iz + 512)
 	local chunk = M.chunks[key]
 	if not chunk then
 		chunk = { key = key, edges = {}, count = 0, center = Vector((ix + 0.5) * CHUNK, (iy + 0.5) * CHUNK, (iz + 0.5) * CHUNK) }
