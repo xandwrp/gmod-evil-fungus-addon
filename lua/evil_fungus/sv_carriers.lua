@@ -39,7 +39,7 @@ local function Pickup(c, foot)
 			if mass < CARRY_MIN then return end
 			colony:Spend(mass)
 			local load = c.EvilFungusSpores or {}
-			load[#load + 1] = { mass = mass, mind = colony.Mind }
+			load[#load + 1] = { mass = mass, mind = colony.Mind, creator = colony:GetCreator() }
 			Load(c, load)
 			return
 		end
@@ -49,7 +49,7 @@ end
 local function Plant(from, pos, normal, spore, clear)
 	if not EvilFungus.Room() or EvilFungus.Taken(pos, clear) then return false end
 	if bit.band(util.PointContents(pos + normal * 2), WATER) ~= 0 then return false end
-	if not EvilFungus.Plant(pos, normal, spore.mass, spore.mind) then return false end
+	if not EvilFungus.Plant(pos, normal, spore.mass, spore.mind, spore.creator) then return false end
 	local fx = EffectData()
 	fx:SetStart(from)
 	fx:SetOrigin(pos)
@@ -118,7 +118,7 @@ hook.Add("EntityRemoved", "EvilFungusCarriers", function(ent)
 	end
 	local pos, normal = Ground(ent)
 	if not pos then return end
-	local spore = { mass = 0, mind = load[1].mind }
+	local spore = { mass = 0, mind = load[1].mind, creator = load[1].creator }
 	for _, s in ipairs(load) do spore.mass = spore.mass + s.mass end
 	local from = ent:GetPos()
 	timer.Simple(0, function() Plant(from, pos, normal, spore) end)

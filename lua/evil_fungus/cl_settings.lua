@@ -70,6 +70,7 @@ local function Build(panel)
 		end
 		if control then control:SetTooltip(s.help) end
 	end
+	panel:Button("Remove all fungus", "evil_fungus_clear").Think = Admin
 end
 
 hook.Add("PopulateToolMenu", "EvilFungusSettings", function()

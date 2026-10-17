@@ -71,6 +71,13 @@ function EvilFungus.Strands()
 	return n
 end
 
+-- Whoever spawned the fungus can clean up every patch it starts, not just the first.
+local function Own(colony, ply)
+	if not IsValid(ply) or not ply:IsPlayer() then return end
+	colony:SetCreator(ply)
+	if cleanup then cleanup.Add(ply, "sents", colony) end
+end
+
 function ENT:SpawnFunction(ply, tr, class)
 	if not tr.HitWorld or tr.HitSky then return end
 
@@ -450,6 +457,7 @@ function ENT:Fuse(other, mine, theirs, now)
 	local keep, lose = self, other
 	if other.Mat.count > self.Mat.count then keep, lose = other, self end
 
+	if not IsValid(keep:GetCreator()) then Own(keep, lose:GetCreator()) end
 	keep.Mat:Absorb(lose.Mat)
 	EvilFungus.Converge(keep.Mind, lose.Mind)
 	keep.Mat:Link(mine, theirs, now)
@@ -570,7 +578,7 @@ end
 local Taken = EvilFungus.Taken
 
 -- A new patch on the ground at pos, starting with that much body and thinking with that mind.
-function EvilFungus.Plant(pos, normal, mass, mind)
+function EvilFungus.Plant(pos, normal, mass, mind, creator)
 	local spore = ents.Create("evil_fungus")
 	if not IsValid(spore) then return end
 	spore:SetPos(pos + normal * 4)
@@ -578,8 +586,18 @@ function EvilFungus.Plant(pos, normal, mass, mind)
 	spore.Mind = mind
 	spore:Spawn()
 	spore:Activate()
+	Own(spore, creator)
 	return spore
 end
+
+concommand.Add("evil_fungus_clear", function(ply)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+	local list = {}
+	for colony in pairs(EvilFungus.Colonies) do
+		if IsValid(colony) then list[#list + 1] = colony end
+	end
+	for _, colony in ipairs(list) do colony:Remove() end
+end, nil, "Remove every patch of fungus on the map")
 
 -- Takes that much body out of the mat, evenly from everywhere it has any.
 function ENT:Spend(mass)
@@ -593,7 +611,7 @@ function ENT:Throw(from, dir)
 	local tr = util.TraceLine({ start = from, endpos = from + dir * SPORE_RANGE, mask = MASK_SOLID_BRUSHONLY })
 	if not tr.HitWorld or tr.HitSky or tr.HitNoDraw or tr.StartSolid or tr.Fraction <= 0.2 or Taken(tr.HitPos) then return false end
 	local mass = self.Body * SPORE_SHARE
-	if not EvilFungus.Plant(tr.HitPos, tr.HitNormal, mass, self.Mind) then return true end
+	if not EvilFungus.Plant(tr.HitPos, tr.HitNormal, mass, self.Mind, self:GetCreator()) then return true end
 	self:Spend(mass)
 
 	local fx = EffectData()
