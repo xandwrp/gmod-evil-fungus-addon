@@ -402,12 +402,12 @@ local function Frontier(node)
 	return node.m > GROW_MASS
 end
 
--- The newest catch still being laid out or still within reach of rescue. The body goes and sits with it.
+-- The newest catch still within reach of rescue. The body goes and sits with it.
 function ENT:Patient()
 	local best
 	for rag in pairs(self.Claimed) do
 		local s = EvilFungus.Sleepers[rag]
-		if s and s.nest and not s.nest.dead and (s.stage == EvilFungus.POSING or s.stage == EvilFungus.CONSUMING)
+		if s and s.nest and not s.nest.dead and (s.stage == EvilFungus.LOOSE or s.stage == EvilFungus.CONSUMING)
 			and (not best or s.since > best.since) then
 			best = s
 		end

@@ -12,7 +12,7 @@ EvilFungus.SETTINGS = {
 	{ name = "consume_time", default = 300, min = 10, max = 1800, decimals = 0, label = "Consume time",
 		help = "Seconds it takes to replace a sleeper with itself, everything but the head" },
 	{ name = "rescue_time", default = 60, min = 0, max = 600, decimals = 0, label = "Rescue window",
-		help = "Seconds into being consumed that a sleeper can still be torn free" },
+		help = "Seconds into being consumed that a sleeper can still be pulled off the mat" },
 	{ name = "give_up", default = 0, min = 0, max = 1, label = "Sleepers can respawn",
 		help = "Players who've gone under can respawn before their rescue window closes" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",

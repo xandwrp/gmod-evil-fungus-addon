@@ -10,19 +10,9 @@ EvilFungus.NEST_VAR = "EvilFungusNest"
 EvilFungus.NEST_UP_VAR = "EvilFungusNestUp"
 EvilFungus.CONSUMED_VAR = "EvilFungusConsumed"
 EvilFungus.SINCE_VAR = "EvilFungusSince"
-EvilFungus.WRAP_VAR = "EvilFungusWrap"
-EvilFungus.LANDED_VAR = "EvilFungusLanded"
 
-EvilFungus.POSING, EvilFungus.CONSUMING, EvilFungus.KEPT, EvilFungus.FREED = 1, 2, 3, 4
+EvilFungus.LOOSE, EvilFungus.CONSUMING, EvilFungus.KEPT, EvilFungus.FREED = 1, 2, 3, 4
 EvilFungus.MIN_SCALE = 0.2
-EvilFungus.HOLD_BONES = {
-	pelvis = "ValveBiped.Bip01_Pelvis", chest = "ValveBiped.Bip01_Spine2", head = "ValveBiped.Bip01_Head1",
-	lshoulder = "ValveBiped.Bip01_L_UpperArm", rshoulder = "ValveBiped.Bip01_R_UpperArm",
-	lelbow = "ValveBiped.Bip01_L_Forearm", relbow = "ValveBiped.Bip01_R_Forearm",
-	lhand = "ValveBiped.Bip01_L_Hand", rhand = "ValveBiped.Bip01_R_Hand",
-	lknee = "ValveBiped.Bip01_L_Calf", rknee = "ValveBiped.Bip01_R_Calf",
-	lfoot = "ValveBiped.Bip01_L_Foot", rfoot = "ValveBiped.Bip01_R_Foot",
-}
 
 -- The bone it leaves alone, and everything hanging off it.
 function EvilFungus.HeadBone(ent)

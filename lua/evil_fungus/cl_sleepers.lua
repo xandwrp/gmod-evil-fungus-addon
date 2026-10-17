@@ -1,4 +1,4 @@
-local POSING, CONSUMING, KEPT = EvilFungus.POSING, EvilFungus.CONSUMING, EvilFungus.KEPT
+local CONSUMING, KEPT = EvilFungus.CONSUMING, EvilFungus.KEPT
 
 local SCAN = 0.5
 local RANGE = 4000
@@ -6,16 +6,6 @@ local FIBER_RANGE = 1800
 local BATCH = 2500
 local STATIC_QUADS = 15000
 local REBUILD = 2
-
-local ARM_GROW = 0.8
-local ARM_SINK = 1.2
-local ARM_SAMPLES = 8
-local ARM_SIDES = 4
-local ARM_RISE = 8
-local BRAID = 3
-local BRAID_R = 1.1
-local TWIST = 9
-local ARM_R = { 0.9, 0.35 }
 
 local VEIN_SAMPLES = 6
 local VEIN_SIDES = 6
@@ -53,15 +43,6 @@ local WIRE_R = { 0.45, 0.8 }
 local WIRE_SPAN = { 8, 16 }
 local WIRE_ARCH = 0.6
 
-local WRAP_GROW = 2
-local UNWRAP = 1.5
-local WRAP_TURNS = 7
-local WRAP_SAMPLES = 56
-local WRAP_STRANDS = 3
-local WRAP_R = { 4.5, 8 }
-local WRAP_THICK = 0.55
-local WRAP_CROWN = 4
-
 local LIMB_SIDES = 6
 -- Rounded ends, as how far past the joint and how wide, so a part's ends close over and the joints run together.
 local CAP = { { 0.34, 0.94 }, { 0.71, 0.71 }, { 1, 0.08 } }
@@ -95,7 +76,7 @@ end
 local function Cache(rag)
 	local c = rag.EvilFungusCache
 	if c and c.model == rag:GetModel() then return c end
-	c = { model = rag:GetModel(), limbs = {}, grips = {} }
+	c = { model = rag:GetModel(), limbs = {} }
 	local head = EvilFungus.HeadBone(rag)
 	c.head = head
 	for bone = 0, rag:GetBoneCount() - 1 do
@@ -104,14 +85,7 @@ local function Cache(rag)
 			c.limbs[#c.limbs + 1] = { bone = bone, parent = parent, thick = Thickness(rag:GetBoneName(bone)) }
 		end
 	end
-	for _, name in pairs(EvilFungus.HOLD_BONES) do
-		local bone = rag:LookupBone(name)
-		if bone then c.grips[#c.grips + 1] = bone end
-	end
-	if #c.grips == 0 then c.grips[1] = 0 end
-	c.pelvis = rag:LookupBone(EvilFungus.HOLD_BONES.pelvis) or 0
-	c.chest = rag:LookupBone(EvilFungus.HOLD_BONES.chest) or c.pelvis
-	c.lfoot, c.rfoot = rag:LookupBone(EvilFungus.HOLD_BONES.lfoot), rag:LookupBone(EvilFungus.HOLD_BONES.rfoot)
+	c.pelvis = rag:LookupBone("ValveBiped.Bip01_Pelvis") or 0
 	local eyes = rag:LookupAttachment("eyes")
 	c.eyes = eyes and eyes > 0 and eyes or nil
 	rag.EvilFungusCache = c
@@ -139,34 +113,6 @@ end
 local function Shape(shapes, pts, radii, up, sides, r, g, b, light)
 	if #pts >= 2 then
 		shapes[#shapes + 1] = { pts = pts, radii = radii, up = up, sides = sides, r = r, g = g, b = b, light = light }
-	end
-end
-
--- Braids of fine strands that rise off the mat and wind round whatever it's moving.
-local function Arm(shapes, from, to, up, grown, now, light, S)
-	local h = math.max(4, (to - from):Dot(up))
-	local lift = from + up * (h * 1.2 + ARM_RISE)
-	local center = {}
-	for i = 0, ARM_SAMPLES do center[i + 1] = Bezier(from, lift, to, i / ARM_SAMPLES * grown) end
-
-	local r, g, b = Mix(S.ROOT, S.BODY_THIN, 0.5)
-	for j = 0, BRAID - 1 do
-		local pts, radii = {}, {}
-		for i, p in ipairs(center) do
-			local t = (i - 1) / ARM_SAMPLES
-			local tangent = center[math.min(#center, i + 1)] - center[math.max(1, i - 1)]
-			if tangent:LengthSqr() < 1e-6 then tangent = Vector(up) end
-			tangent:Normalize()
-			local side = tangent:Cross(up)
-			if side:LengthSqr() < 1e-6 then side = tangent:Cross(Vector(1, 0, 0)) end
-			side:Normalize()
-			local bin = tangent:Cross(side)
-			local phi = j / BRAID * math.pi * 2 + t * TWIST + now * 0.5
-			local spread = BRAID_R * (1 - t * 0.6)
-			pts[i] = p + side * (math.cos(phi) * spread) + bin * (math.sin(phi) * spread)
-			radii[i] = Lerp(t, ARM_R[1], ARM_R[2])
-		end
-		Shape(shapes, pts, radii, up, ARM_SIDES, r, g, b, light)
 	end
 end
 
@@ -300,43 +246,6 @@ local function Vein(shapes, rag, c, nest, up, now, light, S)
 	end
 end
 
--- Caught up off the ground, they get wound up tight from the head down for the trip back to it, and unwound once they're there.
-local function Wrap(shapes, rag, c, clock, light, S)
-	local since = rag:GetNW2Float(EvilFungus.WRAP_VAR, 0)
-	if since <= 0 then return end
-	local k = math.Clamp((clock - since) / WRAP_GROW, 0, 1)
-	local landed = rag:GetNW2Float(EvilFungus.LANDED_VAR, 0)
-	if landed > 0 then k = k * (1 - math.Clamp((clock - landed) / UNWRAP, 0, 1)) end
-	if k <= 0 then return end
-
-	local head = c.head and rag:GetBonePosition(c.head)
-	local pelvis = rag:GetBonePosition(c.pelvis)
-	if not head or not pelvis then return end
-	local lf, rf = c.lfoot and rag:GetBonePosition(c.lfoot), c.rfoot and rag:GetBonePosition(c.rfoot)
-	local bottom = lf and rf and (lf + rf) * 0.5 or pelvis * 2 - head
-	local axis = head - bottom
-	if axis:LengthSqr() < 1 then return end
-	axis:Normalize()
-	local top = head + axis * WRAP_CROWN
-	local ang = axis:Angle()
-	local side, bin = ang:Right(), ang:Up()
-
-	local r, g, b = Mix(S.ROOT, S.BODY_THIN, 0.6)
-	local n = math.max(2, math.ceil(WRAP_SAMPLES * k))
-	for j = 0, WRAP_STRANDS - 1 do
-		local pts, radii = {}, {}
-		for i = 0, n do
-			local u = i / WRAP_SAMPLES
-			if u > k then u = k end
-			local theta = u * WRAP_TURNS * math.pi * 2 + j / WRAP_STRANDS * math.pi * 2
-			local radius = Lerp(math.sin(u * math.pi), WRAP_R[1], WRAP_R[2])
-			pts[i + 1] = Lerp(u, top, bottom) + (side * math.cos(theta) + bin * math.sin(theta)) * radius
-			radii[i + 1] = WRAP_THICK
-		end
-		Shape(shapes, pts, radii, axis, LIMB_SIDES, r, g, b, light)
-	end
-end
-
 -- Wherever a part has shrunk away, fungus fills the same shape.
 local function Limbs(shapes, rag, c, up, light, S)
 	local min = EvilFungus.MIN_SCALE
@@ -462,7 +371,6 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 				local c = Cache(rag)
 				rag:SetupBones()
 				local stage = rag:GetNW2Int(EvilFungus.STAGE_VAR, 0)
-				local since = clock - rag:GetNW2Float(EvilFungus.STAGE_AT_VAR, 0)
 				local t = clock - rag:GetNW2Float(EvilFungus.SINCE_VAR, clock)
 				local close = d2 < FIBER_RANGE * FIBER_RANGE
 
@@ -479,34 +387,12 @@ hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky,
 					if rag.EvilFungusMesh then rag.EvilFungusMesh:Draw() end
 					Vein(shapes, rag, c, nest, up, now, light, S)
 				else
-					local grown = 0
-					if stage == POSING then
-						grown = math.Clamp(since / ARM_GROW, 0, 1)
-					elseif stage == CONSUMING then
-						grown = 1 - math.Clamp(since / ARM_SINK, 0, 1)
-					end
-					-- Still up on a strand: held by the chest, nothing else.
-					local hanging = rag:GetNW2Float(EvilFungus.WRAP_VAR, 0) > 0 and rag:GetNW2Float(EvilFungus.LANDED_VAR, 0) <= 0
-					if hanging then
-						local to = rag:GetBonePosition(c.chest)
-						if to and grown > 0 then Arm(shapes, nest, to, up, grown, now, light, S) end
-					elseif grown > 0 then
-						for _, bone in ipairs(c.grips) do
-							local to = rag:GetBonePosition(bone)
-							if to then Arm(shapes, Floor(to, nest, up), to, up, grown, now, light, S) end
-						end
-					end
-					if stage == POSING or stage == CONSUMING then
-						Wrap(shapes, rag, c, clock, light, S)
-						if not hanging then
-							if close then Fibers(shapes, rag, c, nest, up, t, now, light) end
-							Wires(shapes, rag, c, nest, up, t, light, S)
-						end
-					end
 					if stage == CONSUMING then
+						if close then Fibers(shapes, rag, c, nest, up, t, now, light) end
+						Wires(shapes, rag, c, nest, up, t, light, S)
 						Vein(shapes, rag, c, nest, up, now, light, S)
-						Limbs(shapes, rag, c, up, light, S)
 					end
+					Limbs(shapes, rag, c, up, light, S)
 				end
 			end
 		end
