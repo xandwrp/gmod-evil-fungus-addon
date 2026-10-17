@@ -497,8 +497,8 @@ hook.Add("Think", "EvilFungusRender", function()
 	end
 end)
 
-hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, sky, sky3d)
-	if depth or sky or sky3d then return end
+hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, _, sky3d)
+	if depth or sky3d then return end
 	local t = SysTime()
 	Rebuild()
 	t = EvilFungus.Measure("rebuild", t)
