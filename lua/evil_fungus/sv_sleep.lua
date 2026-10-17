@@ -63,6 +63,7 @@ local function Body(ent)
 	local rag = ents.Create("prop_ragdoll")
 	if not IsValid(rag) then return end
 	rag.EvilFungusSleeper = true
+	rag.DoNotDuplicate = true
 	rag:SetModel(ent:GetModel())
 	rag:SetPos(ent:GetPos())
 	rag:SetAngles(ent:GetAngles())
@@ -212,6 +213,7 @@ local function Wake(s)
 	local rag, owner = s.rag, s.owner
 	Sleep.sleepers[rag] = nil
 	rag.EvilFungusSleeper = nil
+	rag.DoNotDuplicate = nil
 	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
 	for _, b in ipairs(s.schedule or {}) do rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
 
