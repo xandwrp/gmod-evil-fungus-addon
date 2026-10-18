@@ -29,6 +29,9 @@ local FEAR_RADIUS = { 128, 320 }
 local FLEE_DIST = 400
 local FLEE_AGAIN = 1.5
 
+local KEPT_VAR = "EvilCrawlerKept"
+local HEAD_PART = 1
+
 local STANDING_OFFSETS = { Vector(0, 0, 0), Vector(32, 0, 0), Vector(-32, 0, 0), Vector(0, 32, 0), Vector(0, -32, 0) }
 
 local function Drowsy(ent, d)
@@ -191,9 +194,7 @@ local function Consume(s)
 	s.fed, s.progress, s.held = 0, 0, 0
 end
 
-local function Keep(s)
-	SetStage(s, KEPT)
-	Freeze(s.rag)
+local function Gone(s)
 	local owner = s.owner
 	s.owner = nil
 	if not IsValid(owner) then return end
@@ -205,6 +206,12 @@ local function Keep(s)
 		hook.Run("OnNPCKilled", owner, s.fungus, s.fungus)
 		owner:Remove()
 	end
+end
+
+local function Keep(s)
+	SetStage(s, KEPT)
+	Freeze(s.rag)
+	Gone(s)
 end
 
 function Sleep.Free(s)
@@ -219,10 +226,14 @@ local function Wake(s)
 	rag.EvilFungusSleeper = nil
 	rag.DoNotDuplicate = nil
 	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
-	for _, b in ipairs(s.schedule or {}) do rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
+	rag:SetNW2Int(KEPT_VAR, 0)
+	for _, b in ipairs(s.schedule or {}) do
+		if b.scale > 0 then rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
+	end
 
-	local rescued = IsValid(owner) and (not owner:IsPlayer() or owner.EvilFungusHeld == s)
+	local rescued = not s.mauled and IsValid(owner) and (not owner:IsPlayer() or owner.EvilFungusHeld == s)
 	if not rescued then
+		Gone(s)
 		if EvilFungus.Food(rag) then EvilFungus.Foods[rag] = true end
 		return
 	end
@@ -357,6 +368,7 @@ function Sleep.Hold(rag, owner, fungus, s)
 	s.profile = owner:IsPlayer() and EvilFungus.Profile(owner) or nil
 	s.since = CurTime()
 	rag:SetNW2Float(EvilFungus.SINCE_VAR, s.since)
+	rag:SetNW2Int(KEPT_VAR, bit.lshift(1, HEAD_PART - 1))
 	Sleep.sleepers[rag] = s
 	SetStage(s, LOOSE)
 	if IsValid(fungus) then fungus:Claim(rag) end
@@ -373,8 +385,9 @@ local function Digest(s, now)
 	local k = s.progress
 	local min = EvilFungus.MIN_SCALE
 	for _, b in ipairs(s.schedule) do
+		if b.scale > 0 and s.rag:GetManipulateBoneScale(b.bone).x == 0 then b.scale = 0 end
 		local scale = Lerp(math.Clamp((k - b.start) / SHRINK_SPAN, 0, 1), 1, min)
-		if math.abs(scale - b.scale) > 0.01 or scale == min and b.scale ~= min then
+		if b.scale > 0 and (math.abs(scale - b.scale) > 0.01 or scale == min and b.scale ~= min) then
 			b.scale = scale
 			s.rag:ManipulateBoneScale(b.bone, Vector(scale, scale, scale))
 		end
@@ -562,4 +575,15 @@ hook.Add("PlayerSpawn", "EvilFungusSleep", function(ply)
 	ply:SetNW2Bool(EvilFungus.ASLEEP_VAR, false)
 	Drowsy(ply, 0)
 	Sleep.drowsy[ply] = nil
+end)
+
+hook.Add("EvilCrawlerAte", "EvilFungusSleep", function(crawler, rag)
+	local s = Sleep.sleepers[rag]
+	if not s then return end
+	s.mauled = true
+	if s.stage == LOOSE or s.stage == CONSUMING then
+		if not s.schedule then Consume(s) end
+		Keep(s)
+	end
+	if EvilFungus.Infect then EvilFungus.Infect(crawler, s.fungus) end
 end)

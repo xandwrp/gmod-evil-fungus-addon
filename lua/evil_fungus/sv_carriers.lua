@@ -14,13 +14,28 @@ local DROP_CLEAR = 500
 local PAD = Vector(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)
 local WATER = bit.bor(CONTENTS_WATER, CONTENTS_SLIME)
 local CARRIED = "EvilFungusSpores"
+local INFECT_TIME = 60
+local INFECT_SHED = { 10, 18 }
+local INFECT_MASS = 25
+local INFECT_CLEAR = 300
+local INFECT_DUST = 3
 
 local ai_disabled = GetConVar("ai_disabled")
 local Carriers = EvilFungus.Carriers
 
+local function Infected(c)
+	return (c.EvilFungusInfected or 0) > CurTime()
+end
+
+local function Dust(c)
+	local n = c.EvilFungusSpores and #c.EvilFungusSpores or 0
+	if Infected(c) then n = math.max(n, INFECT_DUST) end
+	if c:GetNW2Int(CARRIED, 0) ~= n then c:SetNW2Int(CARRIED, n) end
+end
+
 local function Load(c, load)
 	c.EvilFungusSpores = load
-	c:SetNW2Int(CARRIED, load and #load or 0)
+	Dust(c)
 end
 
 -- The world under its body, if it's on any.
@@ -66,11 +81,19 @@ local function Carry(c, dt)
 	local rate = EvilFungus.Setting("carried")
 	local load = c.EvilFungusSpores
 	if rate <= 0 then
-		if load then Load(c, nil) end
+		c.EvilFungusInfected = nil
+		if load then Load(c, nil) else Dust(c) end
 		return
 	end
 
 	local foot, normal = Ground(c)
+	local now = CurTime()
+	if Infected(c) and foot and now >= (c.EvilFungusShedAt or 0) then
+		c.EvilFungusShedAt = now + math.Rand(INFECT_SHED[1], INFECT_SHED[2]) / rate
+		local by = c.EvilFungusInfectedBy or {}
+		Plant(pos, foot, normal, { mass = INFECT_MASS, mind = by.mind, creator = by.creator }, INFECT_CLEAR)
+	end
+	Dust(c)
 	if (not load or #load < CARRY_MAX) and math.random() < dt * EvilFungus.TimeScale() * rate * PICKUP_RATE then
 		Pickup(c, foot or pos - (c.BodyUp or vector_up) * (c.BodyHeight or 64))
 		load = c.EvilFungusSpores
@@ -83,6 +106,16 @@ local function Carry(c, dt)
 	if not Plant(pos, foot, normal, load[i], DROP_CLEAR) then return end
 	table.remove(load, i)
 	Load(c, #load > 0 and load or nil)
+end
+
+function EvilFungus.Infect(c, colony)
+	if not IsValid(c) or c:GetClass() ~= CRAWLER then return end
+	local now = CurTime()
+	if not Infected(c) then c.EvilFungusShedAt = now + math.Rand(INFECT_SHED[1], INFECT_SHED[2]) * 0.5 end
+	c.EvilFungusInfected = now + INFECT_TIME
+	c.EvilFungusInfectedBy = { mind = IsValid(colony) and colony.Mind or nil, creator = IsValid(colony) and colony:GetCreator() or nil }
+	Carriers[c] = true
+	Dust(c)
 end
 
 local nextCheck = 0
