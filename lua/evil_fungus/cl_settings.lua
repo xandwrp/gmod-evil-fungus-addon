@@ -74,5 +74,5 @@ local function Build(panel)
 end
 
 hook.Add("PopulateToolMenu", "EvilFungusSettings", function()
-	spawnmenu.AddToolMenuOption("Utilities", "Evil Fungus", "evil_fungus_settings", "Settings", "", "", Build)
+	spawnmenu.AddToolMenuOption("Utilities", "Syhgma's Evil Entities", "evil_fungus_settings", "Evil Fungus", "", "", Build)
 end)
