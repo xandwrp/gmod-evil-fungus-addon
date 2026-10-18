@@ -38,6 +38,15 @@ hook.Add("RenderScreenspaceEffects", "EvilFungusDream", function()
 	if shown > 0.4 then DrawToyTown(2, ScrH() * (shown - 0.4)) end
 end)
 
+hook.Add("HUDPaint", "EvilFungusDream", function()
+	local ply = LocalPlayer()
+	if not dreamStart or not IsValid(ply) or EvilFungus.Setting("give_up") == 0 then return end
+	local k = math.Clamp((RealTime() - dreamStart - FADE_IN) / FADE_IN, 0, 1)
+	if k <= 0 then return end
+	local key = string.upper(input.LookupBinding("+jump") or "space")
+	draw.SimpleText("Press " .. key .. " to give up", "Trebuchet24", ScrW() / 2, ScrH() * 0.85, Color(255, 255, 255, 160 * k), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+end)
+
 local SWAY = { pitch = { 3, 0.7 }, yaw = { 4, 0.43 }, roll = { 8, 0.55 }, fov = { 6, 0.37 } }
 
 local function Sway(k, t)

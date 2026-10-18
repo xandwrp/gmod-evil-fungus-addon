@@ -536,7 +536,9 @@ hook.Add("GravGunOnDropped", "EvilFungusSleep", Dropped)
 hook.Add("GravGunPunt", "EvilFungusSleep", Punted)
 
 hook.Add("PlayerDeathThink", "EvilFungusSleep", function(ply)
-	if ply.EvilFungusHeld and EvilFungus.Setting("give_up") == 0 then return false end
+	if not ply.EvilFungusHeld then return end
+	if EvilFungus.Setting("give_up") ~= 0 and ply:KeyPressed(IN_JUMP) then ply:Spawn() end
+	return false
 end)
 
 hook.Add("EntityRemoved", "EvilFungusSleep", function(ent)
