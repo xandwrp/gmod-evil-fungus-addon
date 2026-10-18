@@ -25,6 +25,8 @@ EvilFungus.SETTINGS = {
 		help = "How far through the ground it feels something moving along it at a walk. Faster and heavier carry further. People and animals get hunted where it came from, anything else it goes to look at. At 0 it only feels what walks on it" },
 	{ name = "learning", default = 1, min = 0, max = 10, decimals = 2, label = "Learning",
 		help = "How much smarter every head it takes in makes it, and how much it learns from watching and eating people get away. At 0 it never gets any smarter" },
+	{ name = "learn_noclip", default = 1, min = 0, max = 1, label = "Learns noclip",
+		help = "At 0 it never catches on to noclipping, however much it sees" },
 	{ name = "grow_cost", default = 1, min = 0, max = 3, decimals = 2, label = "Growth cost",
 		help = "How much body each new strand costs. At 0 spreading is free and it never runs out" },
 	{ name = "sprawl", default = 1, min = 0, max = 5, decimals = 2, label = "Sprawl",

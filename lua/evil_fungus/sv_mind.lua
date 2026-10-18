@@ -73,6 +73,7 @@ end
 
 -- How well it understands one way of getting away from it.
 function Mind:Knows(tactic)
+	if tactic == "noclip" and EvilFungus.Setting("learn_noclip") <= 0 then return 0 end
 	return 1 - 1 / (1 + (self.know[tactic] or 0))
 end
 
