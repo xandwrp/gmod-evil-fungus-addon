@@ -16,6 +16,7 @@ if CLIENT then
 	include("evil_fungus/cl_sleepers.lua")
 	include("evil_fungus/cl_carriers.lua")
 else
+	resource.AddWorkshop("3821991353")
 	resource.AddFile("materials/evil_fungus/flesh.vtf")
 	resource.AddFile("materials/evil_fungus/fiber.vtf")
 	resource.AddFile("materials/killicons/evil_fungus.png")
