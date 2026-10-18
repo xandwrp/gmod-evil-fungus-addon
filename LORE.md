@@ -32,5 +32,6 @@ Someone put a scraping under a microscope once. Hexagons, all the way down.
 | Spores | Fed well enough, it throws part of itself somewhere nearby and starts again there. Same fungus, so the patches find each other and merge. Anyone it can smell getting away gets one thrown at their feet | done |
 | Hitchhikers | Evil Crawlers walk through it unharmed, since they don't bleed, but come out carrying spores. They shed a little dust while they carry them, and every so far they go one shakes loose and starts a patch wherever they are, well away from any mat. Whatever one still has on it when it dies comes up where it rotted. Needs Evil Crawling Thing | done |
 | Plants | Don't breathe out what it smells, so it only finds them by touch | done |
+| Hates fire | Fire runs through it strand to strand and burns it away, and the body pulls back from wherever it's burning. Explosions blow holes in it and bullets cut strands. When there's none of it left, it's dead, and whoever it was keeping goes with it | done |
 | The air is nice | It gives off oxygen. The lure. Standing on it should feel good enough that you stay | open |
 | Hexagons | A faint cell pattern pressed into the mat's fibers | done |
