@@ -76,6 +76,10 @@ local function Body(ent)
 	if ent:IsPlayer() then rag:SetNW2Vector(EvilFungus.COLOR_VAR, ent:GetPlayerColor()) end
 	rag:Spawn()
 	rag:Activate()
+	if ent:HasFlexManipulatior() then
+		rag:SetFlexScale(ent:GetFlexScale())
+		for i = 0, math.min(ent:GetFlexNum(), rag:GetFlexNum()) - 1 do rag:SetFlexWeight(i, ent:GetFlexWeight(i)) end
+	end
 
 	local ok, err = pcall(Pose, rag, ent)
 	if not ok or rag:GetPhysicsObjectCount() == 0 then
