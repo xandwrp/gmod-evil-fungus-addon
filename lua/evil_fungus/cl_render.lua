@@ -497,8 +497,21 @@ hook.Add("Think", "EvilFungusRender", function()
 	end
 end)
 
-hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, _, sky3d)
-	if depth or sky3d then return end
+local view = EvilFungus.View or { frame = -1 }
+EvilFungus.View = view
+
+hook.Add("RenderScene", "EvilFungusView", function(origin)
+	view.origin, view.frame = origin, FrameNumber()
+end)
+
+function EvilFungus.MainView(depth, sky, sky3d)
+	if depth or sky3d then return false end
+	if view.frame ~= FrameNumber() or not view.origin then return not sky end
+	return EyePos():DistToSqr(view.origin) < 4
+end
+
+hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, sky, sky3d)
+	if not EvilFungus.MainView(depth, sky, sky3d) then return end
 	local t = SysTime()
 	Rebuild()
 	t = EvilFungus.Measure("rebuild", t)

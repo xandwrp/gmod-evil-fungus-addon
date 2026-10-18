@@ -13,7 +13,7 @@ hook.Add("Think", "EvilFungusCarriers", function()
 	local now = CurTime()
 	if now < nextCheck then return end
 	nextCheck = now + CHECK
-	local eye = EyePos()
+	local eye = EvilFungus.View and EvilFungus.View.origin or EyePos()
 	for _, c in ipairs(ents.FindByClass(CRAWLER)) do
 		local carried = c:GetNW2Int(CARRIED, 0)
 		if carried > 0 and not c:IsDormant() and c:GetPos():DistToSqr(eye) < RANGE * RANGE

@@ -340,8 +340,8 @@ local function Frame(rag, S)
 	return nest, up, S.Light(spot)
 end
 
-hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, _, sky3d)
-	if depth or sky3d then return end
+hook.Add("PostDrawOpaqueRenderables", "EvilFungusSleepers", function(depth, sky, sky3d)
+	if not EvilFungus.MainView(depth, sky, sky3d) then return end
 	local S = EvilFungus.Strands
 	if not S then return end
 	local started = SysTime()
