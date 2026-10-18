@@ -23,7 +23,7 @@ Someone put a scraping under a microscope once. Hexagons, all the way down.
 | Where they fall | Sleepers drop however they drop. While any part of them is on the mat it's eating them. Off it, nothing happens, and if they stay off for a few seconds it lets them go | done |
 | Only the brain | Over five minutes everything but the head is replaced with fungus, from the fingertips in. The shape stays. A vein runs from the neck into the mat | done |
 | Tending | A fresh catch gets the body's full attention. It pools around them and the mat knits itself tight underneath | done |
-| Wiring them in | Within seconds, fine fibers come up off the mat and feel around for the eyes, nose, mouth, ears and the other end, then take hold. More grab the skin. Over the whole consume, thicker strands get thrown over them until they're cocooned | done |
+| Wiring them in | Within seconds, fine fibers come up off the mat and feel around for the eyes, nose, mouth and ears, then take hold. More grab the skin. Over the whole consume, thicker strands get thrown over them until they're cocooned | done |
 | Compute nodes | The head keeps working. Pale beads run down the neck vein into the mat, all the time | done |
 | Getting someone back | For the first minute of that, get a sleeper off the mat and keep them off it. Ten seconds later they get up. NPCs come back terrified of it and won't go near the mat for a while. Players stay held until then, unless the server lets them respawn | done |
 | Feels you walking | Footsteps ripple through the mat to the body. Crouching is quiet, sprinting is loud, jumping over it is silent | done |

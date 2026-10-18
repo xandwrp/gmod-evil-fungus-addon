@@ -85,7 +85,6 @@ local function Cache(rag)
 			c.limbs[#c.limbs + 1] = { bone = bone, parent = parent, thick = Thickness(rag:GetBoneName(bone)) }
 		end
 	end
-	c.pelvis = rag:LookupBone("ValveBiped.Bip01_Pelvis") or 0
 	local eyes = rag:LookupAttachment("eyes")
 	c.eyes = eyes and eyes > 0 and eyes or nil
 	rag.EvilFungusCache = c
@@ -143,8 +142,6 @@ local function Holes(rag, c, up)
 		local p = rag:GetBonePosition(c.head)
 		if p then list[1] = p + up * 3 end
 	end
-	local pelvis = rag:GetBonePosition(c.pelvis)
-	if pelvis then list[#list + 1] = pelvis - up * 3 end
 	return list
 end
 
