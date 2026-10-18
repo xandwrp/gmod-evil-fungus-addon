@@ -504,9 +504,9 @@ hook.Add("RenderScene", "EvilFungusView", function(origin)
 	view.origin, view.frame = origin, FrameNumber()
 end)
 
-function EvilFungus.MainView(depth, sky, sky3d)
+function EvilFungus.MainView(depth, _, sky3d)
 	if depth or sky3d then return false end
-	if view.frame ~= FrameNumber() or not view.origin then return not sky end
+	if view.frame ~= FrameNumber() or not view.origin then return true end
 	return EyePos():DistToSqr(view.origin) < 4
 end
 
