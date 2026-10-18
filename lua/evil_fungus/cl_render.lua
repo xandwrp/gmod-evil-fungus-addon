@@ -421,14 +421,18 @@ end
 local function Select(eye, M)
 	local r2, n = DRAW_RANGE * DRAW_RANGE, 0
 	for node in pairs(M.body) do
-		if node.shown > BODY_GONE and node.pos:DistToSqr(eye) < r2 then
-			n = n + 1
-			candidates[n] = node
+		if node.shown > BODY_GONE then
+			local d2 = node.pos:DistToSqr(eye)
+			if d2 < r2 then
+				n = n + 1
+				candidates[n] = node
+				node.d2 = d2
+			end
 		end
 	end
 	for i = #candidates, n + 1, -1 do candidates[i] = nil end
 	if n > BODY_NODES then
-		table.sort(candidates, function(a, b) return a.shown > b.shown end)
+		table.sort(candidates, function(a, b) return a.d2 < b.d2 end)
 		for i = n, BODY_NODES + 1, -1 do candidates[i] = nil end
 		n = BODY_NODES
 	end

@@ -149,26 +149,88 @@ local function SendLevels(ready)
 	net.Send(ready)
 end
 
-local function SendBody(ready)
-	local list = {}
-	for colony in pairs(EvilFungus.Colonies or {}) do
-		if IsValid(colony) and colony.Mat then
-			for node in pairs(colony.Mat.full) do
-				if node.m > BODY_MIN and node.nid then list[#list + 1] = node end
-			end
-		end
-	end
-	if #list > BODY_LIMIT then
-		table.sort(list, function(a, b) return a.m > b.m end)
-		for i = #list, BODY_LIMIT + 1, -1 do list[i] = nil end
-	end
+local function WriteBody(list, n)
 	net.Start("EvilFungusBody")
-	net.WriteUInt(#list, 12)
-	for _, node in ipairs(list) do
+	net.WriteUInt(n, 12)
+	for i = 1, n do
+		local node = list[i]
 		net.WriteUInt(node.nid, 24)
 		net.WriteUInt(math.Clamp(math.Round(node.m / BODY_MAX_MASS * 255), 1, 255), 8)
 	end
-	net.Send(ready)
+end
+
+local function Kth(a, n, k)
+	local lo, hi = 1, n
+	while lo < hi do
+		local x, i, j = a[k], lo, hi
+		repeat
+			while a[i] < x do i = i + 1 end
+			while x < a[j] do j = j - 1 end
+			if i <= j then
+				a[i], a[j] = a[j], a[i]
+				i, j = i + 1, j - 1
+			end
+		until i > j
+		if j < k then lo = i end
+		if k < i then hi = j end
+	end
+	return a[k]
+end
+
+local function Viewer(ply)
+	local view = ply:GetViewEntity()
+	if IsValid(view) and view ~= ply then return view:GetPos() end
+	return ply:EyePos()
+end
+
+local dist, pick, near = {}, {}, {}
+
+local function Nearest(list, n, ply)
+	local ex, ey, ez = Viewer(ply):Unpack()
+	for i = 1, n do
+		local node = list[i]
+		local d = (node.x - ex) ^ 2 + (node.y - ey) ^ 2 + (node.z - ez) ^ 2
+		dist[i], pick[i] = d, d
+	end
+	local cut = Kth(pick, n, BODY_LIMIT)
+	local count = 0
+	for i = 1, n do
+		if dist[i] < cut then
+			count = count + 1
+			near[count] = list[i]
+		end
+	end
+	for i = 1, n do
+		if count >= BODY_LIMIT then break end
+		if dist[i] == cut then
+			count = count + 1
+			near[count] = list[i]
+		end
+	end
+	return near, count
+end
+
+local function SendBody(ready)
+	local list, n = {}, 0
+	for colony in pairs(EvilFungus.Colonies or {}) do
+		if IsValid(colony) and colony.Mat then
+			for node in pairs(colony.Mat.full) do
+				if node.m > BODY_MIN and node.nid then
+					n = n + 1
+					list[n] = node
+				end
+			end
+		end
+	end
+	if n <= BODY_LIMIT then
+		WriteBody(list, n)
+		net.Send(ready)
+		return
+	end
+	for _, ply in ipairs(ready) do
+		WriteBody(Nearest(list, n, ply))
+		net.Send(ply)
+	end
 end
 
 -- Veins nobody uses thin out slowly on their own; this notices when they've thinned enough to look different.
