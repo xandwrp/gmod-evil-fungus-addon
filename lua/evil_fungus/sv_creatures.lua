@@ -17,6 +17,7 @@ end
 EvilFungus.Creature = Creature
 
 function EvilFungus.Bleeds(ent)
+	if ent.IsVJBaseSNPC then return isstring(ent.BloodColor) and ent.BloodColor ~= "Oil" end
 	local blood = ent.GetBloodColor and ent:GetBloodColor()
 	return blood ~= nil and blood >= 0 and blood ~= BLOOD_COLOR_MECH
 end
