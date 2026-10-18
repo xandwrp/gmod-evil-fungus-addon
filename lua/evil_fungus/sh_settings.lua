@@ -15,6 +15,8 @@ EvilFungus.SETTINGS = {
 		help = "Seconds into being consumed that a sleeper can still be pulled off the mat" },
 	{ name = "give_up", default = 0, min = 0, max = 1, label = "Sleepers can respawn",
 		help = "Players who've gone under can respawn before their rescue window closes" },
+	{ name = "killable", default = 1, min = 0, max = 1, label = "Can be killed",
+		help = "Fire spreads through it and burns it away, explosions blow holes in it and bullets cut its strands. At 0 nothing hurts it" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
 	{ name = "aggression", default = 1, min = 0, max = 20, decimals = 2, label = "Aggression",

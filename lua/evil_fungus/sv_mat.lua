@@ -25,7 +25,7 @@ Mat.EMPTY = EMPTY
 Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
-	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, nextId = 1 }, Mat)
+	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
@@ -76,7 +76,8 @@ end
 -- Takes over every strand of another mat, body and all, leaving it empty.
 function Mat:Absorb(other)
 	for _, node in pairs(other.nodes) do Place(self, node) end
-	other.nodes, other.cells, other.full, other.air, other.count = {}, {}, {}, {}, 0
+	for node, at in pairs(other.burning) do self.burning[node] = at end
+	other.nodes, other.cells, other.full, other.air, other.burning, other.count = {}, {}, {}, {}, {}, 0
 	other.mins, other.maxs = nil, nil
 end
 
@@ -95,6 +96,7 @@ function Mat:Remove(node)
 	end
 	self.full[node] = nil
 	self.air[node] = nil
+	self.burning[node] = nil
 	self.nodes[node.id] = nil
 	self.count = self.count - 1
 	node.dead = true
@@ -134,6 +136,7 @@ function Mat:Thicken(e, flux, now)
 end
 
 function Mat:SetMass(node, m)
+	if node.dead then return end
 	node.m = m
 	self.full[node] = m > EMPTY or nil
 end
@@ -308,6 +311,7 @@ end
 for colony in pairs(EvilFungus.Colonies or {}) do
 	local mat = colony.Mat
 	if mat and not mat.air then mat.air = {} end
+	if mat and not mat.burning then mat.burning = {} end
 	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
 		node.height = node.height or 0

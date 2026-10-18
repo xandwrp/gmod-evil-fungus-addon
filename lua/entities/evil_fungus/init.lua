@@ -52,6 +52,8 @@ local SPORE_RANGE = 1200
 local SPORE_CLEAR = 300
 local SPORE_TRIES = 4
 local MAX_COLONIES = 16
+local FLEE = 4
+local BURN_COST = 1e6
 
 local ai_disabled = GetConVar("ai_disabled")
 
@@ -131,6 +133,10 @@ end
 function ENT:Think()
 	local now = CurTime()
 	if self.Absorbed then return end
+	if self.Mat.count <= 0 then
+		self:Remove()
+		return
+	end
 	if not (ai_disabled and ai_disabled:GetBool()) then
 		local t = SysTime()
 		local scale = EvilFungus.TimeScale()
@@ -327,7 +333,10 @@ function ENT:Decide(now)
 	local mat = self.Mat
 	local left, reached = 0, {}
 	for _ in pairs(mat.full) do left = left + 1 end
-	self.Dist = mat:Distances({ [goal] = 0 }, function(e) return e.len / mat:Conductance(e, now) end, nil,
+	self.Dist = mat:Distances({ [goal] = 0 }, function(e)
+		if e.a.burn or e.b.burn then return BURN_COST end
+		return e.len / mat:Conductance(e, now)
+	end, nil,
 		function(node)
 			if not mat.full[node] or reached[node] then return false end
 			reached[node] = true
@@ -373,14 +382,32 @@ function ENT:Flow(dt, now, rate)
 		local node = flowList[i]
 		flowList[i] = nil
 		local m = node.m
-		if m > EMPTY and not node.dead then
+		if m > EMPTY and not node.dead and node.burn then
+			local edges, safe = node.edges, 0
+			for j = 1, #edges do
+				local e = edges[j]
+				if not (e.a == node and e.b or e.a).burn then safe = safe + 1 end
+			end
+			if safe > 0 then
+				local q = m * math.min(0.9, FLEE * dt) / safe
+				for j = 1, #edges do
+					local e = edges[j]
+					local other = e.a == node and e.b or e.a
+					if not other.burn then
+						SetMass(mat, other, other.m + q)
+						m = m - q
+					end
+				end
+				SetMass(mat, node, m)
+			end
+		elseif m > EMPTY and not node.dead then
 			local edges = node.edges
 			local d, down, to = dist[node] or math.huge, nil, nil
 			for j = 1, #edges do
 				local e = edges[j]
 				local other = e.a == node and e.b or e.a
 				local od = dist[other]
-				if od and od < d and other.m < CAP then d, down, to = od, e, other end
+				if od and od < d and other.m < CAP and not other.burn then d, down, to = od, e, other end
 			end
 			if down then
 				local q = m * math.min(0.9, rate * Conductance(mat, down, now) / down.len * dt)
@@ -393,7 +420,7 @@ function ENT:Flow(dt, now, rate)
 					local e = edges[j]
 					local other = e.a == node and e.b or e.a
 					local om = other.m
-					if om < m then
+					if om < m and not other.burn then
 						local q = (m - om) * spread
 						m = m - q
 						SetMass(mat, other, om + q)
@@ -406,7 +433,7 @@ function ENT:Flow(dt, now, rate)
 end
 
 local function Frontier(node)
-	return node.m > GROW_MASS
+	return node.m > GROW_MASS and not node.burn
 end
 
 -- The newest catch still within reach of rescue. The body goes and sits with it.
@@ -423,6 +450,7 @@ function ENT:Patient()
 end
 
 function ENT:Sprout(from, dir, now, spacing, payer, rise)
+	if from.burn then return end
 	payer = payer or from
 	local cost = GROW_COST * EvilFungus.Setting("grow_cost")
 	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
