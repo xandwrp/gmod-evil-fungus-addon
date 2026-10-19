@@ -251,7 +251,7 @@ end
 function ENT:Aloft(prey)
 	local mind = self.Mind
 	if prey:IsPlayer() and prey:GetMoveType() == MOVETYPE_NOCLIP then return mind:Knows("noclip") end
-	if not prey:IsOnGround() then return math.max(mind:Knows("jump"), mind:Knows("bhop")) end
+	if not EvilFungus.OnGround(prey) then return math.max(mind:Knows("jump"), mind:Knows("bhop")) end
 	local ground = prey:GetGroundEntity()
 	if IsValid(ground) and not ground:IsWorld() then return mind:Knows("high") end
 	return 0

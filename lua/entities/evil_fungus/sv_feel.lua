@@ -132,7 +132,7 @@ function ENT:Feel(now)
 			local pos = ent:GetPos()
 			if not pos:WithinAABox(mins, maxs) then return end
 			local node
-			if ent:IsOnGround() then
+			if EvilFungus.OnGround(ent) then
 				if not self:Perceivable(ent) then return end
 				node = mat:Nearest(pos, FEEL_RADIUS, function(n) return n.up > STANDING and not n.air end) or Against(mat, ent)
 			elseif aloft and self:Perceivable(ent, noclip) then
@@ -178,7 +178,7 @@ function ENT:Feel(now)
 		if st.food then
 			self:Digest(ent, st.node, dt)
 		else
-			local speed = ent:GetVelocity():Length()
+			local speed = EvilFungus.Speed(ent)
 			st.walked = st.walked + speed * real
 			if st.walked >= STEP_DISTANCE or now >= st.still then
 				st.walked, st.still = 0, now + STILL_STEP
@@ -277,7 +277,7 @@ function ENT:Smell(now)
 	local best, bestNode, bestScore
 	local function Sniff(ent)
 		if self.Touching[ent] or not self:Perceivable(ent, true) then return end
-		local reach = range * Strength(ent, ent:GetVelocity():Length()) * Hurt(ent)
+		local reach = range * Strength(ent, EvilFungus.Speed(ent)) * Hurt(ent)
 		-- Someone flying about breathes like anyone else. It just has to know to check up there.
 		if ent:IsPlayer() and Noclipping(ent) then reach = reach * self.Mind:Knows("noclip") end
 		if reach <= 0 then return end
@@ -339,7 +339,7 @@ function ENT:Scavenge(now)
 end
 
 local function Grounded(ent)
-	if ent:IsPlayer() or ent:IsNPC() then return ent:IsOnGround() end
+	if ent:IsPlayer() or ent:IsNPC() then return EvilFungus.OnGround(ent) end
 	if ent:IsNextBot() then return ent.loco ~= nil and ent.loco:IsOnGround() end
 	local center = ent:WorldSpaceCenter()
 	local mins = ent:WorldSpaceAABB()
@@ -358,7 +358,7 @@ local function Shaking(ent)
 	else
 		return 0
 	end
-	local speed = ent:GetVelocity():Length()
+	local speed = EvilFungus.Speed(ent)
 	if speed < SHAKE_MIN or not Grounded(ent) then return 0 end
 	return heavy * math.min(SHAKE_MAX, speed / SHAKE_SPEED)
 end

@@ -37,11 +37,60 @@ local function ZBaseBleeds(ent)
 	return true
 end
 
+local FLESH = { flesh = true, bloodyflesh = true, alienflesh = true, zombieflesh = true, antlion = true }
+local fleshy = {}
+
+local function Fleshy(model)
+	if fleshy[model] == nil then
+		local info = util.GetModelInfo(model)
+		local found = info and FLESH[string.lower(info.SurfacePropName or "")] or false
+		if not found and info and isstring(info.KeyValues) then
+			for prop in string.gmatch(string.lower(info.KeyValues), '"surfaceprop"%s*"([^"]+)"') do
+				if FLESH[prop] then
+					found = true
+					break
+				end
+			end
+		end
+		fleshy[model] = found
+	end
+	return fleshy[model]
+end
+
 function EvilFungus.Bleeds(ent)
 	if ent.IsVJBaseSNPC then return isstring(ent.BloodColor) and ent.BloodColor ~= "Oil" end
 	if ent.IsZBaseNPC and ent.BloodColor == DONT_BLEED then return ZBaseBleeds(ent) end
 	local blood = ent.GetBloodColor and ent:GetBloodColor()
+	if blood == DONT_BLEED and ent:IsNPC() then return Fleshy(ent:GetModel() or "") end
 	return blood ~= nil and blood >= 0 and blood ~= BLOOD_COLOR_MECH
+end
+
+local FOOTING = Vector(0, 0, 12)
+local FOOT_LIFT = Vector(0, 0, 4)
+
+function EvilFungus.OnGround(ent)
+	if ent:IsOnGround() then return true end
+	if not ent:IsNPC() or ent:GetMoveType() == MOVETYPE_FLY then return false end
+	local pos = ent:GetPos()
+	return util.TraceLine({ start = pos + FOOT_LIFT, endpos = pos - FOOTING, filter = ent, mask = MASK_NPCSOLID }).Hit
+end
+
+local SPEED_SAMPLE = 0.1
+local SPEED_STALE = 1
+local SPEED_MAX = 1000
+
+function EvilFungus.Speed(ent)
+	local speed = ent:GetVelocity():Length()
+	if not ent:IsNPC() then return speed end
+	local now, pos = CurTime(), ent:GetPos()
+	local at = ent.EvilFungusMovedAt
+	if not at or now - at > SPEED_STALE then
+		ent.EvilFungusMoved, ent.EvilFungusLastPos, ent.EvilFungusMovedAt = 0, pos, now
+	elseif now - at >= SPEED_SAMPLE then
+		ent.EvilFungusMoved = math.min(SPEED_MAX, pos:Distance(ent.EvilFungusLastPos) / (now - at))
+		ent.EvilFungusLastPos, ent.EvilFungusMovedAt = pos, now
+	end
+	return math.max(speed, ent.EvilFungusMoved)
 end
 
 function EvilFungus.CrawlerHas(ent)
