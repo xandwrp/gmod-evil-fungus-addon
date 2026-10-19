@@ -96,9 +96,62 @@ local function Body(ent)
 	return rag
 end
 
+local function Parts(ent, list)
+	list = list or {}
+	for _, child in ipairs(ent:GetChildren()) do
+		if IsValid(child) then
+			list[#list + 1] = child
+			Parts(child, list)
+		end
+	end
+	return list
+end
+
+local function Tint(rag, color)
+	rag:SetColor(color)
+	for _, part in ipairs(rag.EvilFungusParts or {}) do
+		if IsValid(part) then part:SetColor(color) end
+	end
+end
+
+local function Dress(rag, npc)
+	rag.EvilFungusParts = {}
+	for _, part in ipairs(npc:GetChildren()) do
+		local model = IsValid(part) and part:GetModel()
+		if model and part:IsEffectActive(EF_BONEMERGE) and not part:IsWeapon() and not part:GetNoDraw() and util.IsValidModel(model) then
+			local copy = ents.Create("prop_dynamic")
+			if IsValid(copy) then
+				copy:SetModel(model)
+				copy:SetKeyValue("solid", "0")
+				copy:SetPos(rag:GetPos())
+				copy:SetParent(rag)
+				copy:AddEffects(EF_BONEMERGE)
+				copy:Spawn()
+				copy:SetSkin(part:GetSkin())
+				for _, group in ipairs(part:GetBodyGroups()) do
+					copy:SetBodygroup(group.id, part:GetBodygroup(group.id))
+				end
+				copy:SetMaterial(part:GetMaterial())
+				copy:SetRenderMode(part:GetRenderMode())
+				copy:SetColor(part:GetColor())
+				copy.DoNotDuplicate = true
+				rag:DeleteOnRemove(copy)
+				rag.EvilFungusParts[#rag.EvilFungusParts + 1] = copy
+			end
+		end
+	end
+end
+
 local function Hide(npc)
 	npc.EvilFungusHadNoTarget = npc:IsFlagSet(FL_NOTARGET)
 	npc.EvilFungusMoveType = npc:GetMoveType()
+	npc.EvilFungusParts = {}
+	for _, part in ipairs(Parts(npc)) do
+		if not part:GetNoDraw() then
+			part:SetNoDraw(true)
+			npc.EvilFungusParts[#npc.EvilFungusParts + 1] = part
+		end
+	end
 	npc:SetNoDraw(true)
 	npc:DrawShadow(false)
 	npc:SetNotSolid(true)
@@ -117,6 +170,10 @@ local function Show(npc, spot)
 	npc:SetNotSolid(false)
 	npc:SetNoDraw(false)
 	npc:DrawShadow(true)
+	for _, part in ipairs(npc.EvilFungusParts or {}) do
+		if IsValid(part) then part:SetNoDraw(false) end
+	end
+	npc.EvilFungusParts = nil
 	if not npc.EvilFungusHadNoTarget then npc:RemoveFlags(FL_NOTARGET) end
 end
 
@@ -320,7 +377,7 @@ function Sleep.Burn(rag)
 	Gone(s)
 	rag:Ignite(CHAR_TIME)
 	timer.Simple(CHAR_TIME, function()
-		if IsValid(rag) then rag:SetColor(Color(CHAR[1], CHAR[2], CHAR[3])) end
+		if IsValid(rag) then Tint(rag, Color(CHAR[1], CHAR[2], CHAR[3])) end
 	end)
 end
 
@@ -369,6 +426,7 @@ function Sleep.Under(ent, fungus)
 		ent:Remove()
 		return
 	end
+	Dress(rag, ent)
 	Hide(ent)
 	ent.EvilFungusAsleep = rag
 	Sleep.Hold(rag, ent, fungus, {})
@@ -462,7 +520,7 @@ local function Digest(s, now)
 			s.rag:ManipulateBoneScale(b.bone, Vector(scale, scale, scale))
 		end
 	end
-	s.rag:SetColor(Color(Lerp(k, 255, PALE[1]), Lerp(k, 255, PALE[2]), Lerp(k, 255, PALE[3])))
+	Tint(s.rag, Color(Lerp(k, 255, PALE[1]), Lerp(k, 255, PALE[2]), Lerp(k, 255, PALE[3])))
 	s.rag:SetNW2Float(EvilFungus.CONSUMED_VAR, k)
 
 	local due = s.food * k
