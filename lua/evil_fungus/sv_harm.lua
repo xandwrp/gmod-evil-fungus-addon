@@ -20,6 +20,8 @@ local FLAME_PAD = 16
 local FLAME_MAX = 128
 local SOURCES = { env_fire = 48, env_flare = 16 }
 local BODY_REACH = 24
+local FEAR_PAD = 96
+local RETREAT_MAX = 12
 
 util.AddNetworkString("EvilFungusBurn")
 
@@ -103,22 +105,64 @@ local function Catch(pos, radius, now)
 	end
 end
 
+local hot = {}
+
+local function Cool()
+	for node in pairs(hot) do node.heat = nil end
+	hot = {}
+end
+
+local function Heat(pos, radius)
+	local reach = radius + FEAR_PAD
+	for _, colony in ipairs(Around(pos, reach)) do
+		local mat = colony.Mat
+		mat:Near(pos, reach, function(node, d2)
+			local heat = 1 - math.sqrt(d2) / reach
+			if heat > (node.heat or 0) then node.heat = heat end
+			hot[node] = mat
+		end)
+	end
+end
+
+local function Retreat()
+	local pulled = 0
+	for node, mat in pairs(hot) do
+		if pulled >= RETREAT_MAX then return end
+		if not node.dead and not node.burn and #node.edges == 1 then
+			local e = node.edges[1]
+			local into = e.a == node and e.b or e.a
+			if not into.burn and (into.heat or 0) < node.heat then
+				mat:SetMass(into, into.m + node.m)
+				mat:Remove(node)
+				pulled = pulled + 1
+			end
+		end
+	end
+end
+
 local function Scan(now)
+	Cool()
 	if not next(EvilFungus.Colonies or {}) then return end
+	local fires = {}
 	for _, flame in ipairs(ents.FindByClass("entityflame")) do
 		local on = flame:GetParent()
 		if not IsValid(on) then on = flame:GetInternalVariable("m_hEntAttached") end
 		if IsValid(on) then
-			Catch(on:GetPos(), math.min(FLAME_MAX, on:BoundingRadius() + FLAME_PAD), now)
+			fires[#fires + 1] = { on:GetPos(), math.min(FLAME_MAX, on:BoundingRadius() + FLAME_PAD) }
 		else
-			Catch(flame:GetPos(), FLAME_PAD * 2, now)
+			fires[#fires + 1] = { flame:GetPos(), FLAME_PAD * 2 }
 		end
 	end
 	for class, radius in pairs(SOURCES) do
 		for _, fire in ipairs(ents.FindByClass(class)) do
-			if fire:GetInternalVariable("m_bEnabled") ~= false then Catch(fire:GetPos(), radius, now) end
+			if fire:GetInternalVariable("m_bEnabled") ~= false then fires[#fires + 1] = { fire:GetPos(), radius } end
 		end
 	end
+	for _, f in ipairs(fires) do
+		Catch(f[1], f[2], now)
+		Heat(f[1], f[2])
+	end
+	Retreat()
 end
 
 local function Burn(now)
@@ -145,6 +189,7 @@ local function Burn(now)
 end
 
 local function Douse()
+	Cool()
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		local mat = IsValid(colony) and colony.Mat
 		if mat and next(mat.burning) then
