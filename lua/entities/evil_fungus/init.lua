@@ -577,7 +577,7 @@ function ENT:Weave(dt, now, speed)
 		self.WeaveDebt = self.WeaveDebt - 1
 		local near = {}
 		self.Mat:Near(s.nest.pos, WEAVE_RADIUS, function(node) near[#near + 1] = node end)
-		if #near >= WEAVE_MAX then return end
+		if #near == 0 or #near >= WEAVE_MAX then return end
 		self:Sprout(near[math.random(#near)], VectorRand(), now, WEAVE_SPACING, s.nest)
 		if self.Absorbed then return end
 	end
