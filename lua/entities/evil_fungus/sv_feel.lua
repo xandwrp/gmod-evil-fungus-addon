@@ -336,9 +336,14 @@ function ENT:Shake(now)
 				local d = node and node.pos:Distance(pos)
 				if d and d <= reach then
 					local who = ent:IsVehicle() and ent.GetDriver and ent:GetDriver() or ent
-					local pick = IsValid(who) and self:Perceivable(who) and prey or lure
+					local pick
+					if IsValid(who) and self:Perceivable(who) then
+						pick = prey
+					elseif not (IsValid(who) and (who:IsPlayer() or Creature(who))) then
+						pick = lure
+					end
 					local score = d / reach
-					if not pick.score or score < pick.score then
+					if pick and (not pick.score or score < pick.score) then
 						pick.score, pick.ent, pick.node, pick.pos, pick.d = score, who, node, pos, d
 					end
 				end
