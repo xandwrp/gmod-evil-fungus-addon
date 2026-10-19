@@ -312,7 +312,14 @@ function ENT:Decide(now)
 		self.Target = goal.pos
 		self.GoalStale = true
 	else
-		if self.Lure then
+		local was = self.Carrion
+		local body = self:Scavenge(now)
+		if body then
+			local pos = body:GetPos()
+			if body ~= was or not self.Target or self.Target:DistToSqr(pos) > ARRIVE * ARRIVE then self.GoalStale = true end
+			self.Target, self.Lure, self.Resting = pos, nil, false
+			self.TargetUntil = now + WANDER_TIME[1]
+		elseif self.Lure then
 			self.Target, self.Lure, self.Resting, self.GoalStale = self.Lure, nil, false, true
 			self.TargetUntil = now + math.Rand(WANDER_TIME[1], WANDER_TIME[2])
 		end
@@ -322,7 +329,7 @@ function ENT:Decide(now)
 			goal = self:Closest(self.Target)
 			self.GoalStale = false
 		end
-		if not self.Resting and goal.m > GROW_MASS and goal.pos:Distance(self.Target) < ARRIVE then
+		if not body and not self.Resting and goal.m > GROW_MASS and goal.pos:Distance(self.Target) < ARRIVE then
 			self.Resting = true
 			self.TargetUntil = math.min(self.TargetUntil, now + math.Rand(REST_TIME[1], REST_TIME[2]))
 		end

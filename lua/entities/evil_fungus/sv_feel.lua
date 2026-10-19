@@ -42,6 +42,9 @@ local HIGH = 32
 local BHOP = 1.1
 local SPY_LIFT = Vector(0, 0, 8)
 local AIR_RADIUS = 40
+local SCAVENGE_INTERVAL = 1
+local CARRION_KEEP = 0.5
+local CARRION_LIFT = Vector(0, 0, 8)
 
 -- Everything it feels gets through the mat faster once it's got more to think with.
 function ENT:WaveSpeed()
@@ -287,6 +290,42 @@ function ENT:Smell(now)
 
 	if best ~= prey then self.NextDecide = 0 end
 	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt, self.Smelled = best, bestNode, nil, now, best
+end
+
+local function Eaten(ent, by)
+	for colony in pairs(EvilFungus.Colonies) do
+		if colony ~= by and IsValid(colony) and not colony.Absorbed and colony.Touching and colony.Touching[ent] then return true end
+	end
+	return false
+end
+
+function ENT:Scavenge(now)
+	local had = self.Carrion
+	local still = IsValid(had) and self:Perceivable(had) and not Eaten(had, self)
+	if still and now < (self.NextScavenge or 0) then return had end
+	self.NextScavenge = now + SCAVENGE_INTERVAL
+	self.Carrion = nil
+	local range = EvilFungus.Setting("scavenge")
+	if range <= 0 or not self.Mat.mins then return end
+
+	local mins, maxs = self.Mat.mins, self.Mat.maxs
+	local best, bestScore
+	for ent in pairs(EvilFungus.Foods) do
+		if IsValid(ent) and ent:GetClass() == "prop_ragdoll" and not Eaten(ent, self) and self:Perceivable(ent) then
+			local pos = ent:GetPos()
+			local box = Vector(math.Clamp(pos.x, mins.x, maxs.x), math.Clamp(pos.y, mins.y, maxs.y), math.Clamp(pos.z, mins.z, maxs.z))
+			if box:DistToSqr(pos) <= range * range then
+				local node = self:Closest(pos)
+				local d = node and node.pos:Distance(pos)
+				if d and d <= range and not util.TraceLine({ start = pos + CARRION_LIFT, endpos = node.pos + node.normal * 4, mask = MASK_SOLID_BRUSHONLY }).Hit then
+					local score = d * (ent == had and CARRION_KEEP or 1)
+					if not bestScore or score < bestScore then best, bestScore = ent, score end
+				end
+			end
+		end
+	end
+	self.Carrion = best
+	return best
 end
 
 local function Grounded(ent)
