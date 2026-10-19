@@ -16,8 +16,30 @@ local function Creature(ent)
 end
 EvilFungus.Creature = Creature
 
+local MECHANICAL = { "oil", "spark", "mech", "robot", "metal" }
+
+local function Mechanical(name)
+	if not isstring(name) then return false end
+	name = string.lower(name)
+	for _, word in ipairs(MECHANICAL) do
+		if string.find(name, word, 1, true) then return true end
+	end
+	return false
+end
+
+local function ZBaseBleeds(ent)
+	local decal, particles = ent.CustomBloodDecals, ent.CustomBloodParticles
+	if not decal and not particles then return false end
+	if Mechanical(decal) then return false end
+	for _, name in ipairs(istable(particles) and particles or {}) do
+		if Mechanical(name) then return false end
+	end
+	return true
+end
+
 function EvilFungus.Bleeds(ent)
 	if ent.IsVJBaseSNPC then return isstring(ent.BloodColor) and ent.BloodColor ~= "Oil" end
+	if ent.IsZBaseNPC and ent.BloodColor == DONT_BLEED then return ZBaseBleeds(ent) end
 	local blood = ent.GetBloodColor and ent:GetBloodColor()
 	return blood ~= nil and blood >= 0 and blood ~= BLOOD_COLOR_MECH
 end
