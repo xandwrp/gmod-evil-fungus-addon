@@ -19,6 +19,7 @@ local IGNITE_SOUND = "ambient/fire/ignite.wav"
 local FLAME_PAD = 16
 local FLAME_MAX = 128
 local SOURCES = { env_fire = 48, env_flare = 16 }
+local BODY_REACH = 24
 
 util.AddNetworkString("EvilFungusBurn")
 
@@ -46,6 +47,9 @@ function Harm.Ignite(colony, node, now)
 	node.burn = now
 	colony.Mat.burning[node] = now
 	if node.nid then queued[#queued + 1] = node.nid end
+	for rag in pairs(colony.Claimed or {}) do
+		if IsValid(rag) and rag:NearestPoint(node.pos):DistToSqr(node.pos) < BODY_REACH * BODY_REACH then EvilFungus.Sleep.Burn(rag) end
+	end
 	if now >= (colony.NextCrackle or 0) then
 		colony.NextCrackle = now + SOUND_GAP
 		sound.Play(IGNITE_SOUND, node.pos, 70, math.random(90, 110), 0.7)

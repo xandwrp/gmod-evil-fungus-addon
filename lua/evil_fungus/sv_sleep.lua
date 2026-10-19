@@ -22,6 +22,8 @@ local SHRINK_SPAN = 0.25
 local FOOD_PER_KG = 0.5
 local FOOD_VALUE = { 10, 60 }
 local PALE = { 215, 205, 190 }
+local CHAR = { 45, 38, 32 }
+local CHAR_TIME = 8
 
 local FEAR_TIME = 90
 local FEAR_UPDATE = 0.5
@@ -294,6 +296,32 @@ local function Surrender(s, crawler)
 	s.mauled = true
 	Gone(s, crawler)
 	if EvilFungus.Food(rag) then EvilFungus.Foods[rag] = true end
+end
+
+function Sleep.Burn(rag)
+	local s = Sleep.sleepers[rag]
+	if not s then return end
+	Sleep.sleepers[rag] = nil
+	if IsValid(s.fungus) then s.fungus:Unclaim(rag) end
+	rag.EvilFungusSleeper = nil
+	rag.DoNotDuplicate = nil
+	rag.EvilFungusBurnt = true
+	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
+	rag:SetNW2Int(KEPT_VAR, 0)
+	rag:SetNW2Bool(EvilFungus.WHOLE_VAR, false)
+	for i = 0, rag:GetPhysicsObjectCount() - 1 do
+		local phys = rag:GetPhysicsObjectNum(i)
+		if IsValid(phys) then
+			phys:EnableMotion(true)
+			phys:Wake()
+		end
+	end
+	s.mauled = true
+	Gone(s)
+	rag:Ignite(CHAR_TIME)
+	timer.Simple(CHAR_TIME, function()
+		if IsValid(rag) then rag:SetColor(Color(CHAR[1], CHAR[2], CHAR[3])) end
+	end)
 end
 
 -- Builds up while the fibers are on you and wears off once they aren't.

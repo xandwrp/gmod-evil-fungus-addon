@@ -53,7 +53,7 @@ function EvilFungus.CrawlerHas(ent)
 end
 
 local function Food(ent)
-	if not PROPS[ent:GetClass()] then return false end
+	if ent.EvilFungusBurnt or not PROPS[ent:GetClass()] then return false end
 	local phys = ent:GetPhysicsObject()
 	if IsValid(phys) and ORGANIC[phys:GetMaterial()] then return true end
 	local model = string.lower(ent:GetModel() or "")
