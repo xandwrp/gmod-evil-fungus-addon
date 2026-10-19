@@ -55,6 +55,17 @@ local MAX_COLONIES = 16
 local FLEE = 4
 local BURN_COST = 1e6
 local HEAT_COST = 40
+local BEHIND = 4
+local BEHIND_MARGIN = 24
+local DETOUR_FLAT = 48
+local DETOUR_PROBES = 8
+local DETOUR_RANGE = 384
+local DETOUR_STEP = 48
+local DETOUR_DROP = 16
+local DETOUR_LEAN = 0.3
+local DETOUR_HOLD = 6
+local DETOUR_OFF = 64
+local DETOUR_MOVED = 256
 
 local ai_disabled = GetConVar("ai_disabled")
 
@@ -200,17 +211,89 @@ function ENT:Settle()
 	self:SetPos(self.Center + self.Up * 4)
 end
 
-function ENT:Closest(pos)
-	local node = self.Mat:Nearest(pos, NEAR_GOAL)
-	if node then return node end
+local function Behind(node, x, y, z)
+	if node.air then return false end
+	local nx, ny, nz = node.normal:Unpack()
+	return (node.x - x) * nx + (node.y - y) * ny + (node.z - z) * nz > BEHIND_MARGIN
+end
+
+function ENT:Closest(pos, sided)
 	local px, py, pz = pos:Unpack()
+	local node = self.Mat:Nearest(pos, NEAR_GOAL, sided and function(n) return not Behind(n, px, py, pz) end or nil)
+	if node then return node end
 	local bestD2 = math.huge
 	for _, n in pairs(self.Mat.nodes) do
 		local dx, dy, dz = n.x - px, n.y - py, n.z - pz
 		local d2 = dx * dx + dy * dy + dz * dz
+		if sided and Behind(n, px, py, pz) then d2 = d2 * BEHIND end
 		if d2 < bestD2 then node, bestD2 = n, d2 end
 	end
 	return node
+end
+
+local function Gap(lift, dir, drop)
+	local tr = util.TraceLine({ start = lift, endpos = lift + dir * DETOUR_RANGE, mask = MASK_SOLID_BRUSHONLY })
+	local wall = tr.Hit and not tr.HitSky and tr.Fraction * DETOUR_RANGE or math.huge
+	for dist = DETOUR_STEP, math.min(wall, DETOUR_RANGE), DETOUR_STEP do
+		local p = lift + dir * dist
+		if not util.TraceLine({ start = p, endpos = p + drop, mask = MASK_SOLID_BRUSHONLY }).Hit then return dist end
+	end
+	return wall
+end
+
+local function Stuck(node, target)
+	if node.air then return false end
+	local to = target - node.pos
+	local n = node.normal
+	local off = to:Dot(n)
+	return math.abs(off) > DETOUR_OFF and (to - n * off):Length() < DETOUR_FLAT
+end
+
+local function Detour(node, target)
+	local n = node.normal
+	local ang = n:Angle()
+	local right, up = ang:Right(), ang:Up()
+	local lift = node.pos + n * 4
+	local drop = n * -DETOUR_DROP
+	local to = target - node.pos
+	local along = to - n * to:Dot(n)
+	local toward = along:LengthSqr() > 1 and along:GetNormalized()
+	local spin = math.random() * math.pi * 2
+	local best, bestGap, bestScore
+	for i = 1, DETOUR_PROBES do
+		local a = spin + i / DETOUR_PROBES * math.pi * 2
+		local dir = right * math.cos(a) + up * math.sin(a)
+		local gap = Gap(lift, dir, drop)
+		local score = gap
+		if toward then score = score * (1 - DETOUR_LEAN * dir:Dot(toward)) end
+		if not bestScore or score < bestScore then best, bestGap, bestScore = dir, gap, score end
+	end
+	return lift + best * math.min(bestGap, DETOUR_RANGE)
+end
+
+function ENT:Around(goal, now)
+	local target = self.Target
+	if not goal or not target or self.Hunting and (self.Tunnel or 0) > 0 then
+		self.Waypoint = nil
+		return goal
+	end
+	local way = self.Waypoint
+	if way then
+		local near = self.Mat:Nearest(way, ARRIVE * 2, function(n) return n ~= self.WaypointFrom end)
+		if now > self.WaypointUntil or target:DistToSqr(self.WaypointFor) > DETOUR_MOVED * DETOUR_MOVED or near and not Stuck(near, target) then
+			self.Waypoint, self.GoalStale = nil, true
+			return self:Closest(target, true) or goal
+		end
+		if near then
+			way, self.Waypoint, goal = nil, nil, near
+		end
+	end
+	if not way and Stuck(goal, target) then
+		way = Detour(goal, target)
+		self.Waypoint, self.WaypointFrom, self.WaypointUntil, self.WaypointFor = way, goal, now + DETOUR_HOLD, target
+	end
+	if way then return self:Closest(way) or goal end
+	return goal
 end
 
 local function RandomNode(set, accept)
@@ -308,11 +391,12 @@ function ENT:Decide(now)
 	self.Tending = not self.Hunting and self:Patient() or nil
 	if self.Hunting then
 		self.Target = known and self:Lead(prey, now) or self.PreyFrom or node.pos
-		goal = self:Closest(self.Target) or node
+		goal = self:Closest(self.Target, true) or node
 		self.PreyNode = goal
+		goal = self:Around(goal, now)
 	elseif self.Tending then
 		goal = self.Tending.nest
-		self.Target = goal.pos
+		self.Target, self.Waypoint = goal.pos, nil
 		self.GoalStale = true
 	else
 		local was = self.Carrion
@@ -329,9 +413,10 @@ function ENT:Decide(now)
 		if not self.Target or now >= self.TargetUntil then self:PickTarget(now) end
 		goal = self.Goal
 		if self.GoalStale or not goal or goal.dead then
-			goal = self:Closest(self.Target)
+			goal = self:Closest(self.Target, true)
 			self.GoalStale = false
 		end
+		goal = self:Around(goal, now)
 		if not body and not self.Resting and goal.m > GROW_MASS and goal.pos:Distance(self.Target) < ARRIVE then
 			self.Resting = true
 			self.TargetUntil = math.min(self.TargetUntil, now + math.Rand(REST_TIME[1], REST_TIME[2]))
@@ -500,7 +585,7 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise)
 	if rise then node = self.Mat:Rise(from, dir, now) else node = self.Mat:Grow(from, dir, now, spacing) end
 	if not node then return end
 	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
-	local goal, target = self.Goal, self.Target
+	local goal, target = self.Goal, self.Waypoint or self.Target
 	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
 		self.Goal = node
 	end
@@ -559,7 +644,7 @@ function ENT:Spread(dt, now)
 	-- New strands start empty, so the edge it grows from only changes once a strand's cost takes it under.
 	-- Only what's on a surface wanders off. What's up in the air is only ever there to reach something.
 	local frontier, best, bestD2 = nil, nil, math.huge
-	local target = self.Target
+	local target = self.Waypoint or self.Target
 	local tunnel = self.Hunting and self.Tunnel or 0
 	local function Scan()
 		frontier, best, bestD2 = {}, nil, math.huge
@@ -571,6 +656,7 @@ function ENT:Spread(dt, now)
 				if tx and (tunnel > 0 or not node.air) then
 					local dx, dy, dz = node.x - tx, node.y - ty, node.z - tz
 					local d2 = dx * dx + dy * dy + dz * dz
+					if Behind(node, tx, ty, tz) then d2 = d2 * BEHIND end
 					if d2 < bestD2 then best, bestD2 = node, d2 end
 				end
 			end
