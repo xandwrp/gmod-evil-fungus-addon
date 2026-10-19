@@ -514,8 +514,46 @@ function EvilFungus.MainView(depth, _, sky3d)
 	return EyePos():DistToSqr(view.origin) < 4
 end
 
-hook.Add("PostDrawOpaqueRenderables", "EvilFungusRender", function(depth, sky, sky3d)
-	if not EvilFungus.MainView(depth, sky, sky3d) then return end
+local IDENTITY = Matrix()
+
+local function Clean()
+	render.SetStencilEnable(false)
+	render.SetScissorRect(0, 0, 0, 0, false)
+	render.OverrideDepthEnable(false, false)
+	render.OverrideColorWriteEnable(false, false)
+	render.OverrideAlphaWriteEnable(false, false)
+	render.OverrideBlend(false)
+	render.MaterialOverride()
+	render.CullMode(MATERIAL_CULLMODE_CCW)
+	render.DepthRange(0, 1)
+	render.SetBlend(1)
+	render.SetColorModulation(1, 1, 1)
+end
+
+function EvilFungus.DrawPass(name, draw)
+	local ran = false
+	local function Run()
+		Clean()
+		cam.PushModelMatrix(IDENTITY)
+		local ok, err = pcall(draw)
+		cam.PopModelMatrix()
+		if not ok then ErrorNoHalt("Evil Fungus couldn't draw: ", err, "\n") end
+	end
+	hook.Add("PostDrawOpaqueRenderables", name, function(depth, sky, sky3d)
+		if not EvilFungus.MainView(depth, sky, sky3d) then return end
+		ran = true
+		Run()
+	end)
+	hook.Add("PreDrawTranslucentRenderables", name, function(depth, sky, sky3d)
+		if ran then
+			ran = false
+			return
+		end
+		if EvilFungus.MainView(depth, sky, sky3d) then Run() end
+	end)
+end
+
+EvilFungus.DrawPass("EvilFungusRender", function()
 	local t = SysTime()
 	Rebuild()
 	t = EvilFungus.Measure("rebuild", t)
