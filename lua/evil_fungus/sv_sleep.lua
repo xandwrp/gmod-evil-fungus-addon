@@ -1,6 +1,5 @@
 EvilFungus = EvilFungus or {}
-local Sleep = EvilFungus.Sleep or { drowsy = {}, sleepers = {}, afraid = {} }
-Sleep.afraid = Sleep.afraid or {}
+local Sleep = EvilFungus.Sleep or { drowsy = {}, sleepers = {} }
 EvilFungus.Sleep = Sleep
 EvilFungus.Sleepers = Sleep.sleepers
 
@@ -26,10 +25,6 @@ local CHAR = { 45, 38, 32 }
 local CHAR_TIME = 8
 
 local FEAR_TIME = 90
-local FEAR_UPDATE = 0.5
-local FEAR_RADIUS = { 128, 320 }
-local FLEE_DIST = 400
-local FLEE_AGAIN = 1.5
 
 local KEPT_VAR = "EvilCrawlerKept"
 local HEAD_PART = 1
@@ -325,8 +320,7 @@ local function Wake(s)
 	else
 		owner.EvilFungusAsleep = nil
 		Show(owner, spot)
-		owner.EvilFungusFear = 1
-		Sleep.afraid[owner] = true
+		Evil.Scare(owner, FEAR_TIME)
 	end
 	rag:Remove()
 end
@@ -538,42 +532,7 @@ local function Digest(s, now)
 	end
 end
 
--- Whatever got pulled out of it wants nothing to do with it, or anything it's grown over, for a good while.
-local function Fear(now)
-	for npc in pairs(Sleep.afraid) do
-		if not IsValid(npc) or not npc:IsNPC() then
-			Sleep.afraid[npc] = nil
-		else
-			npc.EvilFungusFear = npc.EvilFungusFear - FEAR_UPDATE / FEAR_TIME
-			if npc.EvilFungusFear <= 0 then
-				Sleep.afraid[npc] = nil
-			elseif now >= (npc.EvilFungusFleeAt or 0) and not npc.EvilFungusAsleep then
-				local pos = npc:GetPos()
-				local radius = Lerp(npc.EvilFungusFear, FEAR_RADIUS[1], FEAR_RADIUS[2])
-				local pad = Vector(radius, radius, radius)
-				for colony in pairs(EvilFungus.Colonies or {}) do
-					local mat = IsValid(colony) and colony.Mat
-					local node = mat and mat.mins and pos:WithinAABox(mat.mins - pad, mat.maxs + pad) and mat:Nearest(pos, radius)
-					if node then
-						local away = pos - node.pos
-						away.z = 0
-						if away:LengthSqr() < 1 then
-							away = VectorRand()
-							away.z = 0
-						end
-						away:Normalize()
-						npc:SetLastPosition(pos + away * FLEE_DIST)
-						npc:SetSchedule(SCHED_FORCED_GO_RUN)
-						npc.EvilFungusFleeAt = now + FLEE_AGAIN
-						break
-					end
-				end
-			end
-		end
-	end
-end
-
-local nextUpdate, nextConsume, nextFear = 0, 0, 0
+local nextUpdate, nextConsume = 0, 0
 
 hook.Add("Think", "EvilFungusSleep", function()
 	local now = CurTime()
@@ -624,11 +583,6 @@ hook.Add("Think", "EvilFungusSleep", function()
 		for rag, s in pairs(Sleep.sleepers) do
 			if IsValid(rag) and (s.stage == CONSUMING or s.stage == KEPT) and not s.done then Digest(s, now) end
 		end
-	end
-
-	if now >= nextFear then
-		nextFear = now + FEAR_UPDATE
-		Fear(now)
 	end
 end)
 

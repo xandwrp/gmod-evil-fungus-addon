@@ -71,6 +71,8 @@ local ai_disabled = GetConVar("ai_disabled")
 
 EvilFungus.Colonies = EvilFungus.Colonies or {}
 
+local PRESENCE_REACH = 320
+
 -- However fast it's told to run, the whole map only lays so many strands a tick.
 hook.Add("Tick", "EvilFungusSprouts", function()
 	EvilFungus.SproutsLeft = SPROUTS_PER_TICK
@@ -137,6 +139,7 @@ function ENT:Initialize()
 	self:InitFeel()
 
 	EvilFungus.Colonies[self] = true
+	Evil.Presence(self, { reach = PRESENCE_REACH, near = self.Nearest })
 	for _, node in ipairs(ring) do
 		if self:Meet(node, now) then return end
 	end
@@ -803,6 +806,15 @@ function ENT:Spores(dt)
 		dir:Normalize()
 		if self:Throw(from, dir) then return end
 	end
+end
+
+function ENT:Nearest(pos)
+	local mat = self.Mat
+	if not mat or not mat.mins then return end
+	local pad = Vector(PRESENCE_REACH, PRESENCE_REACH, PRESENCE_REACH)
+	if not pos:WithinAABox(mat.mins - pad, mat.maxs + pad) then return end
+	local node = mat:Nearest(pos, PRESENCE_REACH)
+	return node and node.pos
 end
 
 function ENT:OnRemove()
