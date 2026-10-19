@@ -42,6 +42,7 @@ local HIGH = 32
 local BHOP = 1.1
 local SPY_LIFT = Vector(0, 0, 8)
 local AIR_RADIUS = 40
+local AGAINST_PAD = Vector(6, 6, 6)
 local SCAVENGE_INTERVAL = 1
 local CARRION_KEEP = 0.5
 local CARRION_LIFT = Vector(0, 0, 8)
@@ -105,6 +106,15 @@ local function Strength(ent, speed)
 	return Lerp(math.Clamp(speed / NPC_RUN, 0, 1), NPC_SLOW, NPC_FAST)
 end
 
+local function Against(mat, ent)
+	local mins, maxs = ent:WorldSpaceAABB()
+	mins, maxs = mins - AGAINST_PAD, maxs + AGAINST_PAD
+	local center = (mins + maxs) * 0.5
+	return mat:Nearest(center, center:Distance(maxs), function(n)
+		return n.up <= STANDING and not n.air and n.pos:WithinAABox(mins, maxs)
+	end)
+end
+
 function ENT:Feel(now)
 	if now < self.NextFeel then return end
 	local real = math.min(FEEL_INTERVAL * 3, now - (self.LastFeel or now))
@@ -124,7 +134,7 @@ function ENT:Feel(now)
 			local node
 			if ent:IsOnGround() then
 				if not self:Perceivable(ent) then return end
-				node = mat:Nearest(pos, FEEL_RADIUS, function(n) return n.up > STANDING and not n.air end)
+				node = mat:Nearest(pos, FEEL_RADIUS, function(n) return n.up > STANDING and not n.air end) or Against(mat, ent)
 			elseif aloft and self:Perceivable(ent, noclip) then
 				node = mat:Nearest(ent:WorldSpaceCenter(), AIR_RADIUS, function(n) return n.air end)
 			end
@@ -443,7 +453,8 @@ end
 function ENT:Feed(ent, node, dt)
 	local mat = self.Mat
 	local m = 0
-	mat:Near(ent:GetPos(), GRIP_RADIUS, function(n) m = m + n.m end)
+	local at = (node.air or node.up > STANDING) and ent:GetPos() or node.pos
+	mat:Near(at, GRIP_RADIUS, function(n) m = m + n.m end)
 
 	if ent:IsPlayer() then
 		local drag = math.Clamp((m - DRAG_MASS[1]) / (DRAG_MASS[2] - DRAG_MASS[1]), 0, 1) * EvilFungus.Setting("grip")
