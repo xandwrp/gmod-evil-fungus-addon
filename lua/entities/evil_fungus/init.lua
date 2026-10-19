@@ -158,6 +158,8 @@ function ENT:Think()
 		t = self:Cost("grow", t)
 		self:Feel(now)
 		self:Cost("feel", t)
+	else
+		self:Slump(FrameTime() * EvilFungus.TimeScale())
 	end
 	self:Report(now)
 	self:DebugDraw(now)
@@ -435,6 +437,35 @@ function ENT:Flow(dt, now, rate)
 						m = m - q
 						SetMass(mat, other, om + q)
 					end
+				end
+			end
+			SetMass(mat, node, m)
+		end
+	end
+end
+
+function ENT:Slump(dt)
+	local mat = self.Mat
+	local n = 0
+	for node in pairs(mat.full) do
+		n = n + 1
+		flowList[n] = node
+	end
+	local k = math.min(0.25, SPREAD * dt)
+	for i = 1, n do
+		local node = flowList[i]
+		flowList[i] = nil
+		local m = node.m
+		if m > EMPTY and not node.dead then
+			local edges = node.edges
+			for j = 1, #edges do
+				local e = edges[j]
+				local other = e.a == node and e.b or e.a
+				local om = other.m
+				if om < m then
+					local q = (m - om) * k
+					m = m - q
+					SetMass(mat, other, om + q)
 				end
 			end
 			SetMass(mat, node, m)
