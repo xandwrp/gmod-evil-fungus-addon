@@ -67,7 +67,7 @@ local function Noclipping(ply)
 end
 
 function ENT:Perceivable(ent, noclip)
-	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep then return false end
+	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep or EvilFungus.CrawlerHas(ent) then return false end
 	if ent:IsPlayer() then
 		return EvilFungus.Setting("attack_players") > 0
 			and not (ai_ignoreplayers and ai_ignoreplayers:GetBool())

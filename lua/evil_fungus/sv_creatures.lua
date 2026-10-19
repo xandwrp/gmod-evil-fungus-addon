@@ -22,6 +22,14 @@ function EvilFungus.Bleeds(ent)
 	return blood ~= nil and blood >= 0 and blood ~= BLOOD_COLOR_MECH
 end
 
+function EvilFungus.CrawlerHas(ent)
+	if not EvilCrawler then return false end
+	if ent.EvilCrawlerVictim or IsValid(ent.EvilCrawlerOwner) then return true end
+	if ent:IsPlayer() then return EvilCrawler.Holder and EvilCrawler.Holder(ent) and true or false end
+	local ply = EvilCrawler.Faker and EvilCrawler.Faker(ent)
+	return ply and (ply.EvilCrawlerVictim or EvilCrawler.Holder and EvilCrawler.Holder(ply)) and true or false
+end
+
 local function Food(ent)
 	if not PROPS[ent:GetClass()] then return false end
 	local phys = ent:GetPhysicsObject()

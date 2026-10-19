@@ -194,16 +194,17 @@ local function Consume(s)
 	s.fed, s.progress, s.held = 0, 0, 0
 end
 
-local function Gone(s)
+local function Gone(s, by)
 	local owner = s.owner
 	s.owner = nil
 	if not IsValid(owner) then return end
 	if owner:IsPlayer() then
 		if owner.EvilFungusHeld == s then owner.EvilFungusHeld = nil end
 	else
+		by = IsValid(by) and by or s.fungus
 		owner.EvilFungusAsleep = nil
 		owner:SetHealth(0)
-		hook.Run("OnNPCKilled", owner, s.fungus, s.fungus)
+		hook.Run("OnNPCKilled", owner, by, by)
 		owner:Remove()
 	end
 end
@@ -270,8 +271,32 @@ local function Wake(s)
 	rag:Remove()
 end
 
+local function Surrender(s, crawler)
+	local rag = s.rag
+	Sleep.sleepers[rag] = nil
+	if IsValid(s.fungus) then s.fungus:Unclaim(rag) end
+	rag.EvilFungusSleeper = nil
+	rag.DoNotDuplicate = nil
+	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
+	rag:SetNW2Int(KEPT_VAR, 0)
+	for _, b in ipairs(s.schedule or {}) do
+		if b.scale > 0 and rag:GetManipulateBoneScale(b.bone).x > 0 then rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
+	end
+	for i = 0, rag:GetPhysicsObjectCount() - 1 do
+		local phys = rag:GetPhysicsObjectNum(i)
+		if IsValid(phys) then
+			phys:EnableMotion(true)
+			phys:Wake()
+		end
+	end
+	s.mauled = true
+	Gone(s, crawler)
+	if EvilFungus.Food(rag) then EvilFungus.Foods[rag] = true end
+end
+
 -- Builds up while the fibers are on you and wears off once they aren't.
 function EvilFungus.Sedate(ent, amount, fungus)
+	if EvilFungus.CrawlerHas(ent) then return false end
 	ent.EvilFungusDosedAt = CurTime()
 	Sleep.drowsy[ent] = true
 	Drowsy(ent, math.min(1, (ent.EvilFungusDrowsy or 0) + amount))
@@ -469,6 +494,8 @@ hook.Add("Think", "EvilFungusSleep", function()
 		for rag, s in pairs(Sleep.sleepers) do
 			if not IsValid(rag) then
 				Sleep.sleepers[rag] = nil
+			elseif EvilFungus.CrawlerHas(rag) then
+				Surrender(s, rag.EvilCrawlerVictim)
 			else
 				local owner = s.owner
 				if IsValid(owner) then
@@ -580,10 +607,7 @@ end)
 hook.Add("EvilCrawlerAte", "EvilFungusSleep", function(crawler, rag)
 	local s = Sleep.sleepers[rag]
 	if not s then return end
-	s.mauled = true
-	if s.stage == LOOSE or s.stage == CONSUMING then
-		if not s.schedule then Consume(s) end
-		Keep(s)
-	end
-	if EvilFungus.Infect then EvilFungus.Infect(crawler, s.fungus) end
+	local fungus = s.fungus
+	Surrender(s, crawler)
+	if EvilFungus.Infect then EvilFungus.Infect(crawler, fungus) end
 end)
