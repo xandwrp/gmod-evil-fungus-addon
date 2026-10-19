@@ -1,5 +1,7 @@
+if not file.Exists("evil_api/init.lua", "LUA") then return ErrorNoHalt("Evil Fungus needs Syhgma's Evil API\n") end
+include("evil_api/init.lua")
+
 AddCSLuaFile("evil_fungus/sh_settings.lua")
-AddCSLuaFile("evil_fungus/cl_settings.lua")
 AddCSLuaFile("evil_fungus/sh_drag.lua")
 AddCSLuaFile("evil_fungus/cl_mat.lua")
 AddCSLuaFile("evil_fungus/cl_render.lua")
@@ -10,7 +12,6 @@ AddCSLuaFile("evil_fungus/cl_fire.lua")
 include("evil_fungus/sh_settings.lua")
 include("evil_fungus/sh_drag.lua")
 if CLIENT then
-	include("evil_fungus/cl_settings.lua")
 	include("evil_fungus/cl_mat.lua")
 	include("evil_fungus/cl_render.lua")
 	include("evil_fungus/cl_dream.lua")

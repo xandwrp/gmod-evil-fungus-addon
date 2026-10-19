@@ -61,44 +61,18 @@ EvilFungus.PRESETS = {
 	} },
 }
 
-local convars, byConVar = {}, {}
-for _, s in ipairs(EvilFungus.SETTINGS) do
-	s.convar = "evil_fungus_" .. s.name
-	convars[s.name] = CreateConVar(s.convar, tostring(s.default), bit.bor(FCVAR_ARCHIVE, FCVAR_REPLICATED), s.help, s.min, s.max)
-	byConVar[s.convar] = s
-end
+EvilFungus.Settings = Evil.Settings({
+	id = "evil_fungus", title = "Evil Fungus", rows = EvilFungus.SETTINGS, presets = EvilFungus.PRESETS,
+	fill = true, reset = false,
+	extra = function(panel)
+		panel:Button("Remove all fungus", "evil_fungus_clear").Think = Evil.AdminOnly
+	end,
+})
 
 function EvilFungus.Setting(name)
-	return convars[name]:GetFloat()
+	return EvilFungus.Settings:Get(name)
 end
 
 function EvilFungus.TimeScale()
-	return convars.time_scale:GetFloat()
+	return EvilFungus.Settings:Get("time_scale")
 end
-
-if CLIENT then return end
-
-util.AddNetworkString("EvilFungusSetting")
-
-net.Receive("EvilFungusSetting", function(_, ply)
-	local s = byConVar[net.ReadString()]
-	local value = tonumber(net.ReadString())
-	if not s or not value or not IsValid(ply) or not ply:IsSuperAdmin() then return end
-	RunConsoleCommand(s.convar, tostring(math.Clamp(value, s.min, s.max)))
-end)
-
-concommand.Add("evil_fungus_preset", function(ply, _, args)
-	if IsValid(ply) and not ply:IsSuperAdmin() then return end
-	for _, preset in ipairs(EvilFungus.PRESETS) do
-		if preset.name == args[1] then
-			for _, s in ipairs(EvilFungus.SETTINGS) do
-				RunConsoleCommand(s.convar, tostring(preset.values[s.name] or s.default))
-			end
-			return
-		end
-	end
-end, function(cmd)
-	local list = {}
-	for _, preset in ipairs(EvilFungus.PRESETS) do list[#list + 1] = cmd .. " " .. preset.name end
-	return list
-end)
