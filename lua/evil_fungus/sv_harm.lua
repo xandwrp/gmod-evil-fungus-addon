@@ -186,12 +186,17 @@ end)
 hook.Add("EntityFireBullets", "EvilFungusHarm", function(ent, data)
 	if not next(EvilFungus.Colonies or {}) or not On() then return end
 	local src, dir = data.Src, data.Dir
-	if not src or not dir then return end
-	local spread = data.Spread or vector_origin
+	if not isvector(src) or not isvector(dir) then return end
+	local spread = data.Spread
+	if isnumber(spread) then
+		spread = Vector(spread, spread, 0)
+	elseif not isvector(spread) then
+		spread = vector_origin
+	end
 	local ang = dir:Angle()
 	local right, up = ang:Right(), ang:Up()
-	local reach = data.Distance or 56756
-	for _ = 1, math.Clamp(data.Num or 1, 1, 16) do
+	local reach = tonumber(data.Distance) or 56756
+	for _ = 1, math.Clamp(tonumber(data.Num) or 1, 1, 16) do
 		local d = dir + right * spread.x * math.Rand(-1, 1) + up * spread.y * math.Rand(-1, 1)
 		local tr = util.TraceLine({ start = src, endpos = src + d * reach, mask = MASK_SHOT, filter = { ent, data.IgnoreEntity } })
 		if tr.HitWorld then Harm.Cut(tr.HitPos, CUT_RADIUS) end
