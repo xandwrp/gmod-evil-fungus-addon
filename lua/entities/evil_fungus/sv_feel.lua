@@ -482,11 +482,12 @@ end
 function ENT:Breathe(dt)
 	local mat = self.Mat
 	for rag in pairs(self.Claimed) do
-		if IsValid(rag) then
+		local s = EvilFungus.Sleepers[rag]
+		if not IsValid(rag) then
+			self.Claimed[rag] = nil
+		elseif not (s and s.corpse) then
 			local node = mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
 			if node then mat:SetMass(node, node.m + BREATH_GAIN * dt) end
-		else
-			self.Claimed[rag] = nil
 		end
 	end
 end
@@ -497,6 +498,11 @@ function ENT:Digest(ent, node, dt)
 	local m = 0
 	mat:Near(ent:GetPos(), GRIP_RADIUS, function(n) m = m + n.m end)
 	if m < GRAB_MASS then return end
+	if ent:GetClass() == "prop_ragdoll" then
+		if ent == self.Prey then self.Eating = nil end
+		EvilFungus.Sleep.Wrap(ent, self)
+		return
+	end
 	if ent == self.Prey then self.Eating = true end
 
 	if not ent.EvilFungusFood then

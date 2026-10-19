@@ -10,6 +10,7 @@ EvilFungus.NEST_VAR = "EvilFungusNest"
 EvilFungus.NEST_UP_VAR = "EvilFungusNestUp"
 EvilFungus.CONSUMED_VAR = "EvilFungusConsumed"
 EvilFungus.SINCE_VAR = "EvilFungusSince"
+EvilFungus.WHOLE_VAR = "EvilFungusWhole"
 
 EvilFungus.LOOSE, EvilFungus.CONSUMING, EvilFungus.KEPT, EvilFungus.FREED = 1, 2, 3, 4
 EvilFungus.MIN_SCALE = 0.2

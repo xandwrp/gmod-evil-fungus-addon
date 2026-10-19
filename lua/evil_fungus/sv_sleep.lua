@@ -161,8 +161,8 @@ local function Rescued(s)
 end
 
 -- Outermost parts go first, the trunk last, and the head not at all.
-local function Schedule(rag)
-	local head = EvilFungus.HeadBone(rag)
+local function Schedule(rag, whole)
+	local head = not whole and EvilFungus.HeadBone(rag)
 	local list, deepest = {}, 1
 	for bone = 0, rag:GetBoneCount() - 1 do
 		if not (head and EvilFungus.UnderHead(rag, bone, head)) then
@@ -189,7 +189,7 @@ end
 local function Consume(s)
 	SetStage(s, CONSUMING)
 	if s.schedule then return end
-	s.schedule = Schedule(s.rag)
+	s.schedule = Schedule(s.rag, s.corpse)
 	s.food = math.Clamp(Kilos(s.rag) * FOOD_PER_KG, FOOD_VALUE[1], FOOD_VALUE[2])
 	s.fed, s.progress, s.held = 0, 0, 0
 end
@@ -228,6 +228,7 @@ local function Wake(s)
 	rag.DoNotDuplicate = nil
 	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
 	rag:SetNW2Int(KEPT_VAR, 0)
+	rag:SetNW2Bool(EvilFungus.WHOLE_VAR, false)
 	for _, b in ipairs(s.schedule or {}) do
 		if b.scale > 0 then rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
 	end
@@ -279,6 +280,7 @@ local function Surrender(s, crawler)
 	rag.DoNotDuplicate = nil
 	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
 	rag:SetNW2Int(KEPT_VAR, 0)
+	rag:SetNW2Bool(EvilFungus.WHOLE_VAR, false)
 	for _, b in ipairs(s.schedule or {}) do
 		if b.scale > 0 and rag:GetManipulateBoneScale(b.bone).x > 0 then rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
 	end
@@ -385,6 +387,7 @@ local function Check(s, now)
 		s.rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, node.normal)
 	end
 	if s.stage == LOOSE then Consume(s) end
+	if s.corpse and s.stage == CONSUMING then Keep(s) end
 end
 
 function Sleep.Hold(rag, owner, fungus, s)
@@ -402,6 +405,20 @@ function Sleep.Hold(rag, owner, fungus, s)
 		local hit = data.HitEntity
 		if held and IsValid(hit) and not hit:IsWorld() and data.Speed > SLAM_SPEED then Touched(held, Thrower(hit)) end
 	end)
+	Check(s, s.since)
+end
+
+function Sleep.Wrap(rag, fungus)
+	EvilFungus.Foods[rag] = nil
+	rag.EvilFungusSleeper = true
+	rag.DoNotDuplicate = true
+	local s = { rag = rag, corpse = true, brain = 0, since = CurTime() }
+	rag:SetNW2Float(EvilFungus.SINCE_VAR, s.since)
+	rag:SetNW2Int(KEPT_VAR, 0)
+	rag:SetNW2Bool(EvilFungus.WHOLE_VAR, true)
+	Sleep.sleepers[rag] = s
+	SetStage(s, LOOSE)
+	if IsValid(fungus) then fungus:Claim(rag) end
 	Check(s, s.since)
 end
 

@@ -75,13 +75,14 @@ end
 
 local function Cache(rag)
 	local c = rag.EvilFungusCache
-	if c and c.model == rag:GetModel() then return c end
-	c = { model = rag:GetModel(), limbs = {} }
+	local whole = rag:GetNW2Bool(EvilFungus.WHOLE_VAR, false)
+	if c and c.model == rag:GetModel() and c.whole == whole then return c end
+	c = { model = rag:GetModel(), limbs = {}, whole = whole }
 	local head = EvilFungus.HeadBone(rag)
 	c.head = head
 	for bone = 0, rag:GetBoneCount() - 1 do
 		local parent = rag:GetBoneParent(bone)
-		if parent and parent >= 0 and not (head and EvilFungus.UnderHead(rag, bone, head)) then
+		if parent and parent >= 0 and (whole or not (head and EvilFungus.UnderHead(rag, bone, head))) then
 			c.limbs[#c.limbs + 1] = { bone = bone, parent = parent, thick = Thickness(rag:GetBoneName(bone)) }
 		end
 	end
@@ -147,7 +148,7 @@ end
 
 local function Fibers(shapes, rag, c, nest, up, t, now, light)
 	local seed = rag:EntIndex()
-	for h, hole in ipairs(Holes(rag, c, up)) do
+	for h, hole in ipairs(c.whole and {} or Holes(rag, c, up)) do
 		for j = 1, FIBERS_PER_HOLE do
 			local k = h * 10 + j
 			local age = t - Lerp(Rand(seed, k, 1), FIBER_DELAY[1], FIBER_DELAY[2])
@@ -216,7 +217,7 @@ end
 
 -- The head's still working, just not for them anymore. You can see it going down the vein.
 local function Vein(shapes, rag, c, nest, up, now, light, S)
-	local head = c.head and rag:GetBonePosition(c.head)
+	local head = not c.whole and c.head and rag:GetBonePosition(c.head)
 	if not head then return end
 	local into = nest + up
 	local bow = (head + into) * 0.5 + up * VEIN_BOW
