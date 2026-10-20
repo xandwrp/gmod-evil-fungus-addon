@@ -473,7 +473,7 @@ end
 function Sleep.Hold(rag, owner, fungus, s)
 	s.rag, s.owner = rag, owner
 	s.brain = EvilFungus.Brain(owner)
-	s.profile = owner:IsPlayer() and EvilFungus.Profile(owner) or nil
+	s.profile = owner:IsPlayer() and EvilFungus.Souls:Profile(owner) or nil
 	s.since = CurTime()
 	rag:SetNW2Float(EvilFungus.SINCE_VAR, s.since)
 	rag:SetNW2Int(KEPT_VAR, bit.lshift(1, HEAD_PART - 1))

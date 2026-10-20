@@ -1,5 +1,4 @@
 EvilFungus = EvilFungus or {}
-EvilFungus.Profiles = EvilFungus.Profiles or {}
 
 local CONSUMING, KEPT = EvilFungus.CONSUMING, EvilFungus.KEPT
 
@@ -24,27 +23,13 @@ end
 local TACTICS = { jump = 10, bhop = 10, noclip = 30, high = 30, outrun = 3, rescue = 1 }
 EvilFungus.TACTICS = TACTICS
 
--- Everything one person has done to get away from it, since it last had them.
-function EvilFungus.Profile(ply)
-	local key = ply:IsBot() and "bot " .. ply:Nick() or ply:SteamID64()
-	local p = EvilFungus.Profiles[key]
-	if not p then
-		p = { did = {}, at = {} }
-		EvilFungus.Profiles[key] = p
-	end
-	return p
-end
-
-local function Skill(p)
-	local skill = 0
-	for tactic, full in pairs(TACTICS) do skill = skill + math.min(1, (p.did[tactic] or 0) / full) end
-	return math.min(SKILL_MAX, skill)
-end
+local souls = Evil.SoulDigestion({ id = "evil_fungus", tricks = TACTICS })
+EvilFungus.Souls = souls
 
 -- Whoever was hardest to catch has the most worth having.
 function EvilFungus.Brain(ent)
 	if not IsValid(ent) then return 0 end
-	if ent:IsPlayer() then return PLAYER_BRAIN * (1 + Skill(EvilFungus.Profile(ent))) end
+	if ent:IsPlayer() then return PLAYER_BRAIN * (1 + math.min(SKILL_MAX, souls:Worth(ent))) end
 	return ent:IsNPC() and BRAINS[ent:Classify()] or NPC_BRAIN
 end
 
@@ -84,21 +69,16 @@ end
 -- Someone getting away from it in front of it. Only once a tick, however many patches of it see.
 -- It takes a little from that, depending on how much it already understands.
 function Mind:Watch(ply, tactic, amount)
-	local p = EvilFungus.Profile(ply)
-	local now = CurTime()
-	if p.at[tactic] == now then return end
-	p.at[tactic] = now
-	p.did[tactic] = (p.did[tactic] or 0) + amount
+	if not souls:Watch(ply, tactic, amount) then return end
 	self.know[tactic] = (self.know[tactic] or 0) + amount / TACTICS[tactic] * WATCH * self:Grasp()
 end
 
 -- Whatever someone knew about getting away from it, it knows once it's done with them. They start over.
 function Mind:Learn(p)
+	local skills = souls:Digest(p)
+	if not skills then return end
 	local learning = EvilFungus.Setting("learning")
-	for tactic, full in pairs(TACTICS) do
-		self.know[tactic] = (self.know[tactic] or 0) + math.min(1, (p.did[tactic] or 0) / full) * learning
-		p.did[tactic] = 0
-	end
+	for tactic, k in pairs(skills) do self.know[tactic] = (self.know[tactic] or 0) + k * learning end
 end
 
 -- Two of it that meet agree they were always the same, and remember everything either one did.
