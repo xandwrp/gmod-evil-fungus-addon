@@ -377,7 +377,7 @@ end
 
 -- Builds up while the fibers are on you and wears off once they aren't.
 function EvilFungus.Sedate(ent, amount, fungus)
-	if EvilFungus.CrawlerHas(ent) then return false end
+	if EvilFungus.CrawlerHas(ent) or Evil.Owner(ent) then return false end
 	ent.EvilFungusDosedAt = CurTime()
 	Sleep.drowsy[ent] = true
 	Drowsy(ent, math.min(1, (ent.EvilFungusDrowsy or 0) + amount))
