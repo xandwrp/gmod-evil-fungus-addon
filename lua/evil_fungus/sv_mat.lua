@@ -25,6 +25,8 @@ local FELT_FACING = 0.5
 local FELT_GRID = 4
 local FELT_LATTICE = FELT / FELT_GRID
 local FELT_SPACING = 8
+local FELT_FULL = 10
+local SOW_SPACING = 24
 
 Mat.STEP = STEP
 Mat.FELT = FELT
@@ -347,17 +349,35 @@ function Mat:Fold(list, cell, now)
 	end
 	for _, node in ipairs(list) do self:Remove(node) end
 
+	local felt = self:Felt(pos, normal, cell, n)
+	self:SetMass(felt, m)
+	for other, D in pairs(links) do
+		if not other.dead then self:Link(felt, other, now, D) end
+	end
+	return felt
+end
+
+function Mat:Felt(pos, normal, cell, folded)
 	local felt = self:Add(pos, normal)
-	felt.felt, felt.bucket, felt.folded = cell, Mat.Bucket(normal), n
+	felt.felt, felt.bucket, felt.folded = cell, Mat.Bucket(normal), folded
 	self.settled[felt] = true
 	self.settledCount = self.settledCount + 1
 	local set = self.felt[cell] or {}
 	set[felt] = true
 	self.felt[cell] = set
-	self:SetMass(felt, m)
-	for other, D in pairs(links) do
-		if not other.dead then self:Link(felt, other, now, D) end
-	end
+	return felt
+end
+
+function Mat:Sow(from, dir, now)
+	local n = from.normal
+	dir = dir - n * dir:Dot(n)
+	if dir:LengthSqr() < 1e-6 then return end
+	dir:Normalize()
+	local pos, normal = self:Walk(from, dir, FELT)
+	if not pos or self:Crowded(pos, normal, SOW_SPACING) then return end
+	if bit.band(util.PointContents(pos + normal * 2), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
+	local felt = self:Felt(pos, normal, Mat.FeltCell(pos:Unpack()), FELT_FULL)
+	self:Link(from, felt, now)
 	return felt
 end
 

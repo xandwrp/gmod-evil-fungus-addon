@@ -46,8 +46,7 @@ local WEAVE_MAX = 30
 local WEAVE_BUDGET = 240
 local DEBT_CAP = 3
 local SPROUTS_PER_TICK = 48
-local OVERGROW_EXTRA = 24
-local OVERGROW_TRIES = 3
+local OVERGROW_EXTRA = 48
 local BUD_TRIES = 8
 local OVERGROW_SPINS = 400
 local OVERGROW_CAP = 5000
@@ -656,6 +655,15 @@ local function Heading(node)
 	return ang:Right() * math.cos(a) + ang:Up() * math.sin(a)
 end
 
+function ENT:Sow(from, dir, now)
+	if (EvilFungus.SproutsLeft or 0) <= 0 or from.burn or from.heat or from.air then return end
+	EvilFungus.SproutsLeft = EvilFungus.SproutsLeft - 1
+	local node = self.Mat:Sow(from, dir, now)
+	if not node then return end
+	self:Meet(node, now)
+	return node
+end
+
 function ENT:Overgrow(now)
 	local open = self.Open
 	if not open then
@@ -671,14 +679,14 @@ function ENT:Overgrow(now)
 		if node.dead or node.air or node.burn then
 			Close(open, node)
 		else
-			local dir = node.felt and Heading(node) or VectorRand()
-			local made = not (node.felt and mat:Covered(node.pos + dir * Mat.FELT, node.normal)) and self:Sprout(node, dir, now)
+			local dir = Heading(node)
+			local made = not mat:Covered(node.pos + dir * Mat.FELT, node.normal) and self:Sow(node, dir, now)
 			if self.Absorbed then return end
 			if made then
 				Open(open, made)
 			else
 				node.tries = (node.tries or 0) + 1
-				if node.tries >= (node.felt and BUD_TRIES or OVERGROW_TRIES) then Close(open, node) end
+				if node.tries >= BUD_TRIES then Close(open, node) end
 			end
 		end
 	end
@@ -686,12 +694,13 @@ end
 
 -- There is only one fungus. Two mats that touch recognise each other and carry on as one.
 function ENT:Meet(node, now)
-	local reach = Vector(Mat.FUSE, Mat.FUSE, Mat.FUSE)
+	local range = node.felt and Mat.FELT or Mat.FUSE
+	local reach = Vector(range, range, range)
 	local pos = node.pos
 	for other in pairs(EvilFungus.Colonies) do
 		local mat = other ~= self and IsValid(other) and not other.Absorbed and other.Mat
 		if mat and mat.mins and pos:WithinAABox(mat.mins - reach, mat.maxs + reach) then
-			local theirs = mat:Nearest(pos, Mat.FUSE, function(n) return Mat.Facing(node, n) and Mat.Reaches(node, n) end)
+			local theirs = mat:Nearest(pos, range, function(n) return Mat.Facing(node, n) and Mat.Reaches(node, n) end)
 			if theirs then return self:Fuse(other, node, theirs, now) end
 		end
 	end
