@@ -62,7 +62,7 @@ local VIEW_SLACK = 16
 
 local WEB_RT = GetRenderTargetEx("evil_fungus_web", WEB_SIZE * 2, WEB_SIZE * 2, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_RGBA8888)
 local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
-	["$basetexture"] = "color/white",
+	["$basetexture"] = WEB_RT:GetName(),
 	["$vertexcolor"] = 1,
 	["$alphatest"] = 1,
 	["$alphatestreference"] = 0.4,
@@ -339,6 +339,7 @@ local function Bake()
 	cam.End2D()
 	render.OverrideAlphaWriteEnable(false)
 	render.PopRenderTarget()
+	WEB:SetTexture("$basetexture", WEB_RT)
 end
 
 hook.Add("PreRender", "EvilFungusWeb", function()
