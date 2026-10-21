@@ -250,9 +250,12 @@ local function Decay(now)
 	end
 end
 
-local nextLevels, nextBody, nextDecay = 0, 0, 0
+local nextLevels, nextBody, nextDecay, lastTick = 0, 0, 0, -1
 
-hook.Add("Tick", "EvilFungusNet", function()
+local function Step()
+	local tick = engine.TickCount()
+	if tick == lastTick then return end
+	lastTick = tick
 	local now = CurTime()
 	if GetGlobal2Int(EvilFungus.NODES_VAR, 0) ~= Net.count then SetGlobal2Int(EvilFungus.NODES_VAR, Net.count) end
 	local ready = {}
@@ -282,4 +285,7 @@ hook.Add("Tick", "EvilFungusNet", function()
 		nextDecay = now + DECAY_INTERVAL
 		Decay(now)
 	end
-end)
+end
+
+hook.Add("Tick", "EvilFungusNet", Step)
+timer.Create("EvilFungusNet", 0, 0, Step)
