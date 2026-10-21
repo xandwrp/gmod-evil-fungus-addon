@@ -15,9 +15,11 @@ local BODY_LIMIT = 800
 local DECAY_INTERVAL = 2
 local DROP_CHUNK = 2000
 local LEVEL_SLACK = 0.75
+local RESYNC_GAP = 5
 
 Net.LEVELS = LEVELS
 Net.BODY_MAX_MASS = BODY_MAX_MASS
+Net.count = Net.count or table.Count(Net.nodes)
 
 util.AddNetworkString("EvilFungusReady")
 util.AddNetworkString("EvilFungusMat")
@@ -38,6 +40,7 @@ function Net.Node(node)
 	node.nid = Net.nextNode
 	Net.nodes[node.nid] = node
 	Net.nextNode = Net.nextNode + 1
+	Net.count = Net.count + 1
 end
 
 function Net.Edge(e)
@@ -62,6 +65,7 @@ end
 function Net.Drop(node)
 	if not node.nid or Net.nodes[node.nid] ~= node then return end
 	Net.nodes[node.nid] = nil
+	Net.count = Net.count - 1
 	Net.dropped[#Net.dropped + 1] = node.nid
 	for _, e in ipairs(node.edges) do
 		if e.eid then
@@ -72,7 +76,9 @@ function Net.Drop(node)
 end
 
 net.Receive("EvilFungusReady", function(_, ply)
-	Net.players[ply] = { node = 0, edge = 0 }
+	local now, st = RealTime(), Net.players[ply]
+	if st and now - (st.asked or 0) < RESYNC_GAP then return end
+	Net.players[ply] = { node = 0, edge = 0, asked = now }
 end)
 
 hook.Add("PlayerDisconnected", "EvilFungusNet", function(ply)
@@ -248,6 +254,7 @@ local nextLevels, nextBody, nextDecay = 0, 0, 0
 
 hook.Add("Tick", "EvilFungusNet", function()
 	local now = CurTime()
+	if GetGlobal2Int(EvilFungus.NODES_VAR, 0) ~= Net.count then SetGlobal2Int(EvilFungus.NODES_VAR, Net.count) end
 	local ready = {}
 	for ply, st in pairs(Net.players) do
 		if IsValid(ply) then

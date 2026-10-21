@@ -12,7 +12,7 @@ if old then
 	end
 end
 
-local M = { nodes = {}, edges = {}, chunks = {}, body = {}, bodyCells = {} }
+local M = { nodes = {}, edges = {}, chunks = {}, body = {}, bodyCells = {}, count = 0 }
 EvilFungus.Client = M
 
 local CHUNK = 64
@@ -20,6 +20,9 @@ local LEVELS = 15
 local BODY_MAX_MASS = 8
 local GROWN = 0.4
 local THICKENED = 2
+local CHECK = 2
+local RESYNC = 6
+local SHORT = 0.5
 
 M.LEVELS = LEVELS
 
@@ -63,7 +66,11 @@ end
 net.Receive("EvilFungusMat", function()
 	for _ = 1, net.ReadUInt(8) do
 		local nid = net.ReadUInt(24)
-		M.nodes[nid] = { nid = nid, pos = net.ReadVector(), normal = net.ReadNormal(), edges = {}, target = 0, shown = 0 }
+		local pos, normal = net.ReadVector(), net.ReadNormal()
+		if not M.nodes[nid] then
+			M.nodes[nid] = { nid = nid, pos = pos, normal = normal, edges = {}, target = 0, shown = 0 }
+			M.count = M.count + 1
+		end
 	end
 	for _ = 1, net.ReadUInt(8) do
 		local eid, an, bn, level = net.ReadUInt(24), net.ReadUInt(24), net.ReadUInt(24), net.ReadUInt(4)
@@ -88,6 +95,7 @@ net.Receive("EvilFungusDrop", function()
 		if node then
 			for i = #node.edges, 1, -1 do RemoveEdge(node.edges[i]) end
 			M.nodes[node.nid] = nil
+			M.count = M.count - 1
 			M.body[node] = nil
 		end
 	end
@@ -118,7 +126,10 @@ net.Receive("EvilFungusBody", function()
 	end
 end)
 
+local asked, short = false, nil
+
 local function Ready()
+	asked = true
 	net.Start("EvilFungusReady")
 	net.SendToServer()
 end
@@ -128,3 +139,21 @@ if IsValid(LocalPlayer()) then
 else
 	hook.Add("InitPostEntity", "EvilFungusReady", Ready)
 end
+
+timer.Create("EvilFungusSync", CHECK, 0, function()
+	if not IsValid(LocalPlayer()) then return end
+	if not asked then
+		Ready()
+		return
+	end
+	if M.count >= GetGlobal2Int(EvilFungus.NODES_VAR, 0) * SHORT then
+		short = nil
+		return
+	end
+	local now = RealTime()
+	short = short or now
+	if now - short >= RESYNC then
+		short = now
+		Ready()
+	end
+end)
