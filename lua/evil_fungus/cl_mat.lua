@@ -16,7 +16,7 @@ local M = { nodes = {}, edges = {}, chunks = {}, body = {}, bodyCells = {}, coun
 EvilFungus.Client = M
 
 local CHUNK = 64
-local SETTLED_CHUNK = 512
+local SETTLED_CHUNK = 256
 local SETTLED_DELAY = 1.5
 local DRAW_RANGE = 6000
 local LEVELS = 15
