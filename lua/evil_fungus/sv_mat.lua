@@ -26,7 +26,7 @@ local FELT_GRID = 4
 local FELT_LATTICE = FELT / FELT_GRID
 local FELT_SPACING = 8
 local FELT_FULL = 10
-local SOW_SPACING = 24
+local SOW_SPACING = 40
 
 Mat.STEP = STEP
 Mat.FELT = FELT
