@@ -462,24 +462,28 @@ local function Select(eye, M)
 	table.sort(cells, function(a, b) return (a.bodyBuilt or -1) < (b.bodyBuilt or -1) end)
 end
 
-local nextPick = 0
+local nextPick, baked = 0, -1
 
 -- The body is the only part that moves. Each cell is rebuilt to pulse every so often, nearer ones more often,
 -- stalest first and only for so long a frame.
 local function DrawBody(eye)
 	local M = EvilFungus.Client
-	local now = RealTime()
-	if now >= nextPick then
-		nextPick = now + BODY_PICK
-		Select(eye, M)
-	end
+	local frame = FrameNumber()
+	if baked ~= frame then
+		baked = frame
+		local now = RealTime()
+		if now >= nextPick then
+			nextPick = now + BODY_PICK
+			Select(eye, M)
+		end
 
-	local stop = SysTime() + BODY_MS / 1000
-	for i = 1, cellCount do
-		local cell = cells[i]
-		if now - (cell.bodyBuilt or -math.huge) >= cell.lod[4] then
-			BakeBody(cell)
-			if SysTime() >= stop then break end
+		local stop = SysTime() + BODY_MS / 1000
+		for i = 1, cellCount do
+			local cell = cells[i]
+			if now - (cell.bodyBuilt or -math.huge) >= cell.lod[4] then
+				BakeBody(cell)
+				if SysTime() >= stop then break end
+			end
 		end
 	end
 
@@ -490,7 +494,12 @@ local function DrawBody(eye)
 	end
 end
 
-hook.Add("Think", "EvilFungusRender", function()
+local shownAt = -1
+
+local function Show()
+	local frame = FrameNumber()
+	if shownAt == frame then return end
+	shownAt = frame
 	local M = EvilFungus.Client
 	local k = math.min(1, FrameTime() * BODY_SHOW)
 	for node in pairs(M.body) do
@@ -500,7 +509,9 @@ hook.Add("Think", "EvilFungusRender", function()
 			M.body[node] = nil
 		end
 	end
-end)
+end
+
+hook.Add("Think", "EvilFungusRender", Show)
 
 local view = EvilFungus.View or { frame = -1 }
 EvilFungus.View = view
@@ -559,12 +570,18 @@ function EvilFungus.DrawPass(name, draw)
 	end)
 end
 
+local rebuilt, eye = -1, Vector()
+
 EvilFungus.DrawPass("EvilFungusRender", function()
 	local t = SysTime()
-	Rebuild()
-	t = EvilFungus.Measure("rebuild", t)
+	local frame = FrameNumber()
+	if rebuilt ~= frame then
+		rebuilt, eye = frame, EyePos()
+		Show()
+		Rebuild()
+		t = EvilFungus.Measure("rebuild", t)
+	end
 
-	local eye = EyePos()
 	local r = DRAW_RANGE + 128
 	local r2 = r * r
 	render.SetMaterial(MAT)
