@@ -46,9 +46,9 @@ local WEAVE_MAX = 30
 local WEAVE_BUDGET = 240
 local DEBT_CAP = 3
 local SPROUTS_PER_TICK = 48
-local OVERGROW_EXTRA = 48
+local OVERGROW_EXTRA = 24
 local OVERGROW_TRIES = 3
-local OVERGROW_CAP = 15000
+local OVERGROW_CAP = 5000
 local FLOW_SUBSTEPS = 4
 local MIN_DECIDE = 0.08
 local SPORE_BODY = 80
@@ -455,6 +455,10 @@ function ENT:Decide(now)
 
 	-- Only the body needs to know the way, so the search ends once it has reached every part of it.
 	local mat = self.Mat
+	if EvilFungus.Setting("hurtilizer") > 0 then
+		self.Dist = nil
+		return
+	end
 	local left, reached = 0, {}
 	for _ in pairs(mat.full) do left = left + 1 end
 	self.Dist = mat:Distances({ [goal] = 0 }, function(e)

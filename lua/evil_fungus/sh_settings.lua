@@ -46,7 +46,7 @@ EvilFungus.SETTINGS = {
 	{ name = "settle", default = 0, min = 0, max = 1, label = "Settled mat",
 		help = "Experimental. Quiet stretches of mat fold into big patches that count as one strand, so it can cover far more ground. They unfold when anything gets close" },
 	{ name = "hurtilizer", default = 0, min = 0, max = 1, decimals = 2, label = "Hurtilizer",
-		help = "Debug. Above 0 it ignores body, growth cost, flow and the mat size and just keeps spreading over everything, faster the higher it goes, and settles with no wait, Settled mat or not. Still stops at 15000 unsettled strands" },
+		help = "Debug. Above 0 it ignores body, growth cost, flow and the mat size and just keeps spreading over everything, faster the higher it goes, and settles with no wait, Settled mat or not. Keeps at most 5000 unsettled strands at once" },
 	{ name = "start_mass", default = 60, min = 10, max = 400, decimals = 0, label = "Starting body",
 		help = "How much body a fresh fungus has to spread with" },
 	{ name = "grow_speed", default = 1, min = 0, max = 10, decimals = 2, label = "Spread speed",

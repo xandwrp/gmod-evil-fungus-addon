@@ -1,7 +1,7 @@
 local Mat = EvilFungus.Mat
 
-local FOLD_INTERVAL = { 2, 0.25 }
-local FOLDS = { 12, 64 }
+local FOLD_INTERVAL = { 2, 0.5 }
+local FOLDS = { 12, 128 }
 local FOLD_MIN = 3
 local AGE = 30
 local GROW_MASS = 1
