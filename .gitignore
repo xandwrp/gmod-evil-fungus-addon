@@ -1,5 +1,5 @@
+*.md
+!README.md
 *.blend1
 renders/
 __pycache__/
-WORKSHOP.md
-SUGGESTIONS.md
