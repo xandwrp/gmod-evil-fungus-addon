@@ -175,19 +175,21 @@ def dxt1_solid(rgb):
     return bytes(out)
 
 
-def write_vtf(path, rgba):
+def write_vtf(path, rgba, mip=None):
     img = Image.fromarray(rgba, "RGBA")
     mips = [img]
     while mips[-1].width > 1:
         w = mips[-1].width // 2
         mips.append(img.resize((w, w), Image.LANCZOS))
+    if mip:
+        mips = [mip(m) for m in mips]
 
     flags = 0x0010 | 0x2000  # anisotropic, eight-bit alpha
     linear = (rgba[..., :3].astype(float) / 255) ** 2.2
     refl = linear.reshape(-1, 3).mean(0)
     header = struct.pack(
         "<4s2IIHHIHH4x3f4xfIBIBBH",
-        b"VTF\0", 7, 2, 80, SIZE, SIZE, flags, 1, 0,
+        b"VTF\0", 7, 2, 80, rgba.shape[1], rgba.shape[0], flags, 1, 0,
         *refl, 1.0, 12, len(mips), 13, 16, 16, 1)
     header += b"\0" * (80 - len(header))
 
