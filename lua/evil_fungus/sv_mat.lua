@@ -35,7 +35,7 @@ Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
 	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, woven = {}, wovenCount = 0,
-		settled = {}, felt = {}, nextId = 1 }, Mat)
+		settled = {}, settledCount = 0, felt = {}, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
@@ -101,6 +101,7 @@ function Mat:Absorb(other)
 	for node, at in pairs(other.burning) do self.burning[node] = at end
 	for node in pairs(other.woven) do self.woven[node] = true end
 	self.wovenCount = self.wovenCount + other.wovenCount
+	self.settledCount = self.settledCount + other.settledCount
 	for node in pairs(other.settled) do
 		self.settled[node] = true
 		local set = self.felt[node.felt] or {}
@@ -108,7 +109,7 @@ function Mat:Absorb(other)
 		self.felt[node.felt] = set
 	end
 	other.nodes, other.cells, other.full, other.air, other.burning, other.count = {}, {}, {}, {}, {}, 0
-	other.woven, other.wovenCount, other.settled, other.felt = {}, 0, {}, {}
+	other.woven, other.wovenCount, other.settled, other.settledCount, other.felt = {}, 0, {}, 0, {}
 	other.mins, other.maxs = nil, nil
 end
 
@@ -133,6 +134,7 @@ function Mat:Remove(node)
 		self.wovenCount = self.wovenCount - 1
 	end
 	if node.felt then
+		if self.settled[node] then self.settledCount = self.settledCount - 1 end
 		self.settled[node] = nil
 		local set = self.felt[node.felt]
 		if set then
@@ -348,6 +350,7 @@ function Mat:Fold(list, cell, now)
 	local felt = self:Add(pos, normal)
 	felt.felt, felt.bucket, felt.folded = cell, Mat.Bucket(normal), n
 	self.settled[felt] = true
+	self.settledCount = self.settledCount + 1
 	local set = self.felt[cell] or {}
 	set[felt] = true
 	self.felt[cell] = set
@@ -530,6 +533,7 @@ for colony in pairs(EvilFungus.Colonies or {}) do
 	if mat and not mat.burning then mat.burning = {} end
 	if mat and not mat.woven then mat.woven, mat.wovenCount = {}, 0 end
 	if mat and not mat.settled then mat.settled, mat.felt = {}, {} end
+	if mat and not mat.settledCount then mat.settledCount = table.Count(mat.settled) end
 	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
 		node.height = node.height or 0

@@ -46,6 +46,9 @@ local WEAVE_MAX = 30
 local WEAVE_BUDGET = 240
 local DEBT_CAP = 3
 local SPROUTS_PER_TICK = 48
+local OVERGROW_EXTRA = 48
+local OVERGROW_TRIES = 3
+local OVERGROW_CAP = 15000
 local FLOW_SUBSTEPS = 4
 local MIN_DECIDE = 0.08
 local SPORE_BODY = 80
@@ -78,7 +81,7 @@ local PRESENCE_REACH = 320
 
 -- However fast it's told to run, the whole map only lays so many strands a tick.
 hook.Add("Tick", "EvilFungusSprouts", function()
-	EvilFungus.SproutsLeft = SPROUTS_PER_TICK
+	EvilFungus.SproutsLeft = SPROUTS_PER_TICK + math.ceil(EvilFungus.Setting("hurtilizer") * OVERGROW_EXTRA)
 end)
 
 -- Every strand on the map, all fungus together, since it's all one fungus.
@@ -86,6 +89,14 @@ function EvilFungus.Strands()
 	local n = 0
 	for colony in pairs(EvilFungus.Colonies) do
 		if colony.Mat then n = n + colony.Mat.count - colony.Mat.wovenCount end
+	end
+	return n
+end
+
+function EvilFungus.Settled()
+	local n = 0
+	for colony in pairs(EvilFungus.Colonies) do
+		if colony.Mat then n = n + colony.Mat.settledCount end
 	end
 	return n
 end
@@ -596,7 +607,7 @@ end
 function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	if from.burn or from.heat then return end
 	payer = payer or from
-	local cost = GROW_COST * EvilFungus.Setting("grow_cost")
+	local cost = EvilFungus.Setting("hurtilizer") > 0 and 0 or GROW_COST * EvilFungus.Setting("grow_cost")
 	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
 	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
 	local node
@@ -610,6 +621,46 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	end
 	self:Meet(node, now)
 	return node
+end
+
+local function Open(open, node)
+	if open.at[node] then return end
+	local n = #open.list + 1
+	open.list[n], open.at[node] = node, n
+end
+
+local function Close(open, node)
+	local i = open.at[node]
+	if not i then return end
+	local list, n = open.list, #open.list
+	local last = list[n]
+	list[i], open.at[last] = last, i
+	list[n], open.at[node] = nil, nil
+end
+
+function ENT:Overgrow(now)
+	local open = self.Open
+	if not open then
+		open = { list = {}, at = {} }
+		self.Open = open
+		for _, node in pairs(self.Mat.nodes) do Open(open, node) end
+	end
+	if EvilFungus.Strands() - EvilFungus.Settled() >= OVERGROW_CAP then return end
+	while (EvilFungus.SproutsLeft or 0) > 0 and #open.list > 0 do
+		local node = open.list[math.random(#open.list)]
+		if node.dead or node.air or node.burn or node.felt then
+			Close(open, node)
+		else
+			local made = self:Sprout(node, VectorRand(), now)
+			if self.Absorbed then return end
+			if made then
+				Open(open, made)
+			else
+				node.tries = (node.tries or 0) + 1
+				if node.tries >= OVERGROW_TRIES then Close(open, node) end
+			end
+		end
+	end
 end
 
 -- There is only one fungus. Two mats that touch recognise each other and carry on as one.
@@ -632,6 +683,11 @@ function ENT:Fuse(other, mine, theirs, now)
 
 	if not IsValid(keep:GetCreator()) then Own(keep, lose:GetCreator()) end
 	keep.Mat:Absorb(lose.Mat)
+	if keep.Open and lose.Open then
+		for _, node in ipairs(lose.Open.list) do Open(keep.Open, node) end
+	else
+		keep.Open = nil
+	end
 	EvilFungus.Converge(keep.Mind, lose.Mind)
 	keep.Mat:Link(mine, theirs, now)
 	keep:Adopt(lose)
@@ -647,6 +703,11 @@ end
 
 function ENT:Spread(dt, now)
 	local mat = self.Mat
+	if EvilFungus.Setting("hurtilizer") > 0 then
+		self:Overgrow(now)
+		return
+	end
+	self.Open = nil
 	if self.Body < MIN_BODY then return end
 	local speed = EvilFungus.Setting("grow_speed")
 	local sprawl = EvilFungus.Setting("sprawl")

@@ -1,7 +1,7 @@
 local Mat = EvilFungus.Mat
 
-local FOLD_INTERVAL = 2
-local FOLDS = 12
+local FOLD_INTERVAL = { 2, 0.25 }
+local FOLDS = { 12, 64 }
 local FOLD_MIN = 6
 local AGE = 30
 local GROW_MASS = 1
@@ -50,9 +50,9 @@ function ENT:Rouse(now)
 	end
 end
 
-local function Loose(self, mat, node, now)
+local function Loose(self, mat, node, now, age)
 	return not node.air and not node.burn and not node.heat and not mat.woven[node] and node.m < GROW_MASS
-		and now - (node.born or 0) > AGE and node ~= self.Goal and node ~= self.PreyNode
+		and now - (node.born or 0) > age and node ~= self.Goal and node ~= self.PreyNode
 end
 
 local function Key(cell, bucket)
@@ -94,7 +94,9 @@ end
 
 function ENT:Settling(now)
 	if now < (self.NextFold or 0) then return end
-	self.NextFold = now + FOLD_INTERVAL
+	local hurt = EvilFungus.Setting("hurtilizer")
+	self.NextFold = now + Lerp(hurt, FOLD_INTERVAL[1], FOLD_INTERVAL[2])
+	local age, most = AGE * (1 - hurt), math.Round(Lerp(hurt, FOLDS[1], FOLDS[2]))
 	local mat = self.Mat
 	if EvilFungus.Setting("settle") <= 0 then
 		if not next(mat.settled) then return end
@@ -114,7 +116,7 @@ function ENT:Settling(now)
 		if not node.bucket then node.bucket = Mat.Bucket(node.normal) end
 		local key = not node.felt and not node.air and Key(cell, node.bucket)
 		if key and not blocked[key] then
-			if Loose(self, mat, node, now) then
+			if Loose(self, mat, node, now, age) then
 				local g = groups[key]
 				if not g then
 					g = { cell = cell, list = {} }
@@ -145,7 +147,7 @@ function ENT:Settling(now)
 			if clear and Flat(g.list) and Hemmed(mat, occupied, g.cell, bucket, first.pos) then
 				mat:Fold(g.list, g.cell, now)
 				folds = folds + 1
-				if folds >= FOLDS then break end
+				if folds >= most then break end
 			end
 		end
 	end
