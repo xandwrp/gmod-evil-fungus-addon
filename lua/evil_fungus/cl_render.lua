@@ -40,6 +40,7 @@ local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
 local TEX_STRETCH = 1.4
+local VIEW_SLACK = 16
 
 local COST_SMOOTH = 0.05
 local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
@@ -511,7 +512,7 @@ end)
 function EvilFungus.MainView(depth, _, sky3d)
 	if depth or sky3d then return false end
 	if view.frame ~= FrameNumber() or not view.origin then return true end
-	return EyePos():DistToSqr(view.origin) < 4
+	return not render.GetRenderTarget() or EyePos():DistToSqr(view.origin) < VIEW_SLACK * VIEW_SLACK
 end
 
 local IDENTITY = Matrix()
