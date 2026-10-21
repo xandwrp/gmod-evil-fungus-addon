@@ -73,6 +73,7 @@ else
 	resource.AddFile("materials/killicons/evil_fungus.png")
 	include("evil_fungus/sv_creatures.lua")
 	include("evil_fungus/sv_mind.lua")
+	include("evil_fungus/sv_scent.lua")
 	include("evil_fungus/sv_net.lua")
 	include("evil_fungus/sv_sleep.lua")
 	include("evil_fungus/sv_carriers.lua")

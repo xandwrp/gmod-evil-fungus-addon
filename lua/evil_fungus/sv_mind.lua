@@ -7,6 +7,9 @@ local PLAYER_BRAIN = 1
 local NPC_BRAIN = 0.1
 local SKILL_MAX = 2
 local WATCH = 0.1
+local TASTE = 0.05
+local TASTE_OPEN = 0.3
+local TASTE_BRAIN = 0.01
 
 -- How much thinking each kind of head is good for, next to a person's.
 local BRAINS = {}
@@ -71,6 +74,13 @@ end
 function Mind:Watch(ply, tactic, amount)
 	if not souls:Watch(ply, tactic, amount) then return end
 	self.know[tactic] = (self.know[tactic] or 0) + amount / TACTICS[tactic] * WATCH * self:Grasp()
+end
+
+function Mind:Taste(tactic, amount)
+	local learning = EvilFungus.Setting("learning")
+	local grasp = TASTE_OPEN + (1 - TASTE_OPEN) * self:Grasp()
+	self.know[tactic] = (self.know[tactic] or 0) + amount / TACTICS[tactic] * TASTE * grasp * learning
+	self.kept = self.kept + amount * TASTE_BRAIN
 end
 
 -- Whatever someone knew about getting away from it, it knows once it's done with them. They start over.

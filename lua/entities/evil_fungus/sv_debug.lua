@@ -9,6 +9,7 @@ local WAVE = Color(40, 220, 170)
 local GOAL = Color(255, 0, 255)
 local TARGET = Color(255, 255, 255)
 local PREY = Color(255, 40, 40)
+local SCENT = Color(180, 90, 255)
 
 local cv_debug = CreateConVar("evil_fungus_debug", "0", 0, "Draw the mat, its body and footstep waves (needs developer 1)")
 
@@ -56,6 +57,10 @@ function ENT:DebugDraw(now)
 				debugoverlay.Cross(node.pos + node.normal * (LIFT + 2), 4, life, WAVE, true)
 			end
 		end
+	end
+
+	for _, s in ipairs(EvilFungus.Scents or {}) do
+		if Seen(s.pos) then debugoverlay.Cross(s.pos + Vector(0, 0, LIFT), 6, life, SCENT, true) end
 	end
 
 	if self.Goal and not self.Goal.dead then debugoverlay.Cross(self.Goal.pos, 16, life, GOAL, true) end
