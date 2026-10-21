@@ -606,6 +606,7 @@ hook.Add("HUDPaint", "EvilFungusCost", function()
 		("drawing mat     %.2f ms  (%d chunks, %d strands)"):format(c.chunks or 0, chunks, strands),
 		("drawing body    %.2f ms  (%d strands)"):format(c.body or 0, M.bodyDrawn or 0),
 		("sleepers        %.2f ms"):format(c.sleepers or 0),
+		("synced          %d of %d nodes"):format(M.count or 0, GetGlobal2Int(EvilFungus.NODES_VAR, 0)),
 	}
 	for i, line in ipairs(lines) do
 		draw.SimpleText(line, "BudgetLabel", 24, 120 + i * 14, color_white)
