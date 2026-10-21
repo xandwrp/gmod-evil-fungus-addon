@@ -42,15 +42,33 @@ local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
 local TEX_STRETCH = 1.4
-local WEB_POINTS = 14
 local WEB_HALF = 40
 local WEB_FULL = 10
-local WEB_LINKS = 2
+local WEB_GRID = 2
 local WEB_REACH = 16
 local WEB_FACING = 0.5
-local WEB_THICK = 2
+local WEB_LIFT = 0.5
+local WEB_SIZE = 512
+local WEB_VARIANTS = 4
+local WEB_POINTS = 26
+local WEB_RIM = 8
+local WEB_LINKS = 2
+local WEB_WIDTH = { 3, 8 }
+local WEB_SEGMENTS = 4
+local WEB_BOW = 0.15
+local WEB_INSET = 0.004
 local VEIN_SHOWN = 4
 local VIEW_SLACK = 16
+
+local WEB_RT = GetRenderTargetEx("evil_fungus_web", WEB_SIZE * 2, WEB_SIZE * 2, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_RGBA8888)
+local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
+	["$basetexture"] = "color/white",
+	["$vertexcolor"] = 1,
+	["$alphatest"] = 1,
+	["$alphatestreference"] = 0.4,
+	["$nocull"] = 1,
+})
+WEB:SetTexture("$basetexture", WEB_RT)
 
 local COST_SMOOTH = 0.05
 local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
@@ -87,8 +105,9 @@ end
 -- Meshes built before a reload may be in another vertex format, so everything is rebuilt.
 for _, chunk in pairs(EvilFungus.Client and EvilFungus.Client.chunks or {}) do
 	if chunk.mesh then chunk.mesh:Destroy() end
+	if chunk.webMesh then chunk.webMesh:Destroy() end
 	if chunk.bodyMesh then chunk.bodyMesh:Destroy() end
-	chunk.mesh, chunk.bodyMesh, chunk.bodyBuilt = nil, nil, nil
+	chunk.mesh, chunk.webMesh, chunk.bodyMesh, chunk.bodyBuilt = nil, nil, nil, nil
 	EvilFungus.Client.Stale(chunk, 0)
 end
 for _, cell in pairs(EvilFungus.Client and EvilFungus.Client.bodyCells or {}) do
@@ -267,42 +286,128 @@ local function Radius(e)
 	return Lerp(e.level / LEVELS, R_THIN, R_THICK)
 end
 
-local function Web(node)
-	local web = node.web
-	if web then return web end
-	web = {}
-	node.web = web
-	local n = node.normal
-	local ang = n:Angle()
-	local right, up = ang:Right(), ang:Up()
-	local pts = {}
-	local folded = node.folded or WEB_POINTS
-	local half = Lerp(math.min(1, folded / WEB_FULL), WEB_HALF * 0.5, WEB_HALF)
-	for i = 1, math.Clamp(folded + 2, 3, WEB_POINTS) do
-		local u, v = Hash(node.nid * 31 + i) * 2 - 1, Hash(node.nid * 57 + i * 3) * 2 - 1
-		local start = node.pos + n * WEB_REACH + (right * u + up * v) * half
-		local tr = util.TraceLine({ start = start, endpos = start - n * WEB_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
-		if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > WEB_FACING then
-			pts[#pts + 1] = { pos = tr.HitPos, normal = tr.HitNormal }
-		end
+local function Strand(x0, y0, x1, y1, width, seed)
+	local dx, dy = x1 - x0, y1 - y0
+	local bow = (Hash(seed) - 0.5) * 2 * WEB_BOW
+	local px, py = x0, y0
+	for s = 1, WEB_SEGMENTS do
+		local k = s / WEB_SEGMENTS
+		local lift = 4 * k * (1 - k) * bow
+		local x, y = x0 + dx * k - dy * lift, y0 + dy * k + dx * lift
+		local sx, sy = x - px, y - py
+		local len = math.sqrt(sx * sx + sy * sy)
+		surface.DrawTexturedRectRotated((x + px) * 0.5, (y + py) * 0.5, len + width, width * Lerp(k, 1, 0.7), -math.deg(math.atan2(sy, sx)))
+		px, py = x, y
 	end
-	local seen = {}
-	for i, a in ipairs(pts) do
-		local near = {}
-		for j, b in ipairs(pts) do
-			if j ~= i then near[#near + 1] = { j, a.pos:DistToSqr(b.pos) } end
+end
+
+local function Bake()
+	render.PushRenderTarget(WEB_RT)
+	render.OverrideAlphaWriteEnable(true, true)
+	render.Clear(0, 0, 0, 0, true, true)
+	cam.Start2D()
+	draw.NoTexture()
+	for variant = 0, WEB_VARIANTS - 1 do
+		local ox, oy = (variant % 2) * WEB_SIZE, math.floor(variant / 2) * WEB_SIZE
+		local pts = {}
+		for i = 1, WEB_POINTS + WEB_RIM do
+			local seed = variant * 1000 + i
+			local r = i > WEB_POINTS and 0.49 or math.sqrt(Hash(seed)) * 0.42
+			local a = Hash(seed + 500) * math.pi * 2
+			pts[i] = { WEB_SIZE * (0.5 + math.cos(a) * r), WEB_SIZE * (0.5 + math.sin(a) * r) }
 		end
-		table.sort(near, function(x, y) return x[2] < y[2] end)
-		for k = 1, math.min(WEB_LINKS, #near) do
-			local j = near[k][1]
-			local key = math.min(i, j) * 64 + math.max(i, j)
-			if not seen[key] then
-				seen[key] = true
-				web[#web + 1] = { a = a, b = pts[j], eid = node.nid * 4096 + key }
+		local seen = {}
+		for i = 1, #pts do
+			local near = {}
+			for j = 1, WEB_POINTS do
+				if j ~= i then near[#near + 1] = { j, (pts[i][1] - pts[j][1]) ^ 2 + (pts[i][2] - pts[j][2]) ^ 2 } end
+			end
+			table.sort(near, function(x, y) return x[2] < y[2] end)
+			for k = 1, math.min(i > WEB_POINTS and 1 or WEB_LINKS, #near) do
+				local j = near[k][1]
+				local key = math.min(i, j) * 256 + math.max(i, j)
+				if not seen[key] then
+					seen[key] = true
+					local seed = variant * 100000 + key
+					local shade = 200 + 55 * Hash(seed + 3)
+					surface.SetDrawColor(shade, shade, shade, 255)
+					Strand(ox + pts[i][1], oy + pts[i][2], ox + pts[j][1], oy + pts[j][2], Lerp(Hash(seed + 9), WEB_WIDTH[1], WEB_WIDTH[2]), seed)
+				end
 			end
 		end
 	end
+	cam.End2D()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+end
+
+hook.Add("PreRender", "EvilFungusWeb", function()
+	hook.Remove("PreRender", "EvilFungusWeb")
+	Bake()
+end)
+hook.Add("OnScreenSizeChanged", "EvilFungusWeb", Bake)
+
+local function Web(node)
+	local web = node.sheet
+	if web then return web end
+	local n = node.normal
+	local ang = n:Angle()
+	local spin = Hash(node.nid * 7) * math.pi * 2
+	local c, s = math.cos(spin), math.sin(spin)
+	local r0, u0 = ang:Right(), ang:Up()
+	local right, up = r0 * c + u0 * s, u0 * c - r0 * s
+	local half = Lerp(math.min(1, (node.folded or WEB_FULL) / WEB_FULL), WEB_HALF * 0.5, WEB_HALF)
+	local variant = node.nid % WEB_VARIANTS
+	local ou, ov = (variant % 2) * 0.5, math.floor(variant / 2) * 0.5
+	local pts, quads = {}, 0
+	for i = 0, WEB_GRID do
+		pts[i] = {}
+		for j = 0, WEB_GRID do
+			local su, sv = i / WEB_GRID, j / WEB_GRID
+			local start = node.pos + n * WEB_REACH + (right * (su * 2 - 1) + up * (sv * 2 - 1)) * half
+			local tr = util.TraceLine({ start = start, endpos = start - n * WEB_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
+			if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > WEB_FACING then
+				local lit = render.ComputeLighting(tr.HitPos + tr.HitNormal * 3, tr.HitNormal)
+				local l = math.min(1.5, 0.1 + math.sqrt((lit.x + lit.y + lit.z) / 3) * 1.25)
+				pts[i][j] = {
+					pos = tr.HitPos + tr.HitNormal * WEB_LIFT, normal = tr.HitNormal,
+					u = ou + WEB_INSET + su * (0.5 - WEB_INSET * 2), v = ov + WEB_INSET + sv * (0.5 - WEB_INSET * 2),
+					r = math.min(255, ROOT[1] * l), g = math.min(255, ROOT[2] * l), b = math.min(255, ROOT[3] * l),
+				}
+			end
+		end
+	end
+	for i = 0, WEB_GRID - 1 do
+		for j = 0, WEB_GRID - 1 do
+			if pts[i][j] and pts[i + 1][j] and pts[i + 1][j + 1] and pts[i][j + 1] then quads = quads + 1 end
+		end
+	end
+	web = { pts = pts, quads = quads }
+	node.sheet = web
 	return web
+end
+
+local function WebVert(p)
+	Position(p.pos)
+	Normal(p.normal)
+	TexCoord(0, p.u, p.v)
+	Colour(p.r, p.g, p.b, 255)
+	Advance()
+end
+
+local function Lay(web)
+	local pts = web.pts
+	for i = 0, WEB_GRID - 1 do
+		for j = 0, WEB_GRID - 1 do
+			local a, b, c, d = pts[i][j], pts[i + 1][j], pts[i + 1][j + 1], pts[i][j + 1]
+			if a and b and c and d then
+				WebVert(a)
+				WebVert(b)
+				WebVert(c)
+				WebVert(d)
+			end
+		end
+	end
 end
 
 local function Build(chunk)
@@ -310,27 +415,41 @@ local function Build(chunk)
 		chunk.mesh:Destroy()
 		chunk.mesh = nil
 	end
+	if chunk.webMesh then
+		chunk.webMesh:Destroy()
+		chunk.webMesh = nil
+	end
 	if chunk.count <= 0 then
 		EvilFungus.Client.chunks[chunk.key] = nil
 		return
 	end
 
-	local webs, quads, shaped = {}, 0, 0
+	local webs, flat, shaped = {}, 0, 0
 	for node in pairs(chunk.patches) do
-		local web = node.web
+		local web = node.sheet
 		if not web and shaped < SHAPES_PER_BUILD then
 			shaped = shaped + 1
 			web = Web(node)
 		elseif not web then
 			chunk.due = RealTime()
 		end
-		if web and #web > 0 and quads + #web * ROOT_SIDES <= MAX_CHUNK_QUADS then
+		if web and web.quads > 0 and flat + web.quads <= MAX_CHUNK_QUADS then
 			webs[#webs + 1] = web
-			quads = quads + #web * ROOT_SIDES
+			flat = flat + web.quads
 		end
 	end
+	if flat > 0 then
+		local im = Mesh(WEB)
+		mesh.Begin(im, MATERIAL_QUADS, flat)
+		local ok, err = pcall(function()
+			for _, web in ipairs(webs) do Lay(web) end
+		end)
+		mesh.End()
+		if not ok then ErrorNoHalt("Evil Fungus couldn't build a settled chunk: ", err, "\n") end
+		chunk.webMesh = im
+	end
 
-	local list, tube = {}, SEGMENTS * ROOT_SIDES
+	local list, quads, tube = {}, 0, SEGMENTS * ROOT_SIDES
 	for e in pairs(chunk.edges) do
 		if #list >= MAX_CHUNK_EDGES or quads + tube > MAX_CHUNK_QUADS then break end
 		if not (e.a.felt or e.b.felt) or e.level >= VEIN_SHOWN then
@@ -343,13 +462,6 @@ local function Build(chunk)
 	local im = Mesh(MAT)
 	mesh.Begin(im, MATERIAL_QUADS, quads)
 	local ok, err = pcall(function()
-		for _, web in ipairs(webs) do
-			for _, e in ipairs(web) do
-				local tint = 0.9 + 0.2 * Hash(e.eid + 7)
-				local r = R_THIN * Lerp(Hash(e.eid + 11), 1, WEB_THICK)
-				Tube(e, r, r * TAPER, ROOT_SIDES, ROOT[1] * tint, ROOT[2] * tint, ROOT[3] * tint, 1)
-			end
-		end
 		for _, e in ipairs(list) do
 			local k = e.level / LEVELS
 			local tint = 0.9 + 0.2 * Hash(e.eid + 7)
@@ -661,6 +773,10 @@ EvilFungus.DrawPass("EvilFungusRender", function()
 	render.SetMaterial(MAT)
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
 		if chunk.mesh and chunk.center:DistToSqr(eye) < (chunk.cull or r2) then chunk.mesh:Draw() end
+	end
+	render.SetMaterial(WEB)
+	for _, chunk in pairs(EvilFungus.Client.chunks) do
+		if chunk.webMesh and chunk.center:DistToSqr(eye) < (chunk.cull or r2) then chunk.webMesh:Draw() end
 	end
 	t = EvilFungus.Measure("chunks", t)
 	DrawBody(eye)
