@@ -452,7 +452,7 @@ local function Check(s, now)
 	if not node then
 		if s.stage == CONSUMING then SetStage(s, LOOSE) end
 		if now - s.stageAt >= LET_GO then
-			if Tugged(s, now) then Rescued(s) else Sleep.Free(s) end
+			if Tugged(s, now) and not s.corpse then Rescued(s) else Sleep.Free(s) end
 		end
 		return
 	end
@@ -467,7 +467,6 @@ local function Check(s, now)
 		s.rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, node.normal)
 	end
 	if s.stage == LOOSE then Consume(s) end
-	if s.corpse and s.stage == CONSUMING then Keep(s) end
 end
 
 function Sleep.Hold(rag, owner, fungus, s)
