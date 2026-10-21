@@ -2,7 +2,6 @@ local Mat = EvilFungus.Mat
 
 local FOLD_INTERVAL = { 2, 0.5 }
 local FOLDS = { 12, 128 }
-local FOLD_MIN = 3
 local AGE = 30
 local GROW_MASS = 1
 local WAKE_RADIUS = 128
@@ -12,15 +11,6 @@ local ROUSE_INTERVAL = 0.1
 local UNFOLDS = 16
 local FLAT = 16
 local BOX_PAD = Vector(256, 256, 256)
-local SIDES = {
-	[0] = { Vector(1, 0, 0), Vector(0, 1, 0) },
-	[1] = { Vector(1, 0, 0), Vector(0, 1, 0) },
-	[2] = { Vector(0, 1, 0), Vector(0, 0, 1) },
-	[3] = { Vector(0, 1, 0), Vector(0, 0, 1) },
-	[4] = { Vector(1, 0, 0), Vector(0, 0, 1) },
-	[5] = { Vector(1, 0, 0), Vector(0, 0, 1) },
-}
-local UP = { [0] = Vector(0, 0, 1), Vector(0, 0, -1), Vector(1, 0, 0), Vector(-1, 0, 0), Vector(0, 1, 0), Vector(0, -1, 0) }
 
 function ENT:Stirring()
 	local list = {}
@@ -63,33 +53,11 @@ local function Flat(list)
 	local first = list[1]
 	local px, py, pz = first.x, first.y, first.z
 	local nx, ny, nz = first.normal:Unpack()
+	local flat = {}
 	for _, node in ipairs(list) do
-		if math.abs((node.x - px) * nx + (node.y - py) * ny + (node.z - pz) * nz) > FLAT then return false end
+		if math.abs((node.x - px) * nx + (node.y - py) * ny + (node.z - pz) * nz) <= FLAT then flat[#flat + 1] = node end
 	end
-	return true
-end
-
-local function Hemmed(mat, occupied, cell, bucket, center)
-	local up = UP[bucket]
-	for _, axis in ipairs(SIDES[bucket]) do
-		for sign = -1, 1, 2 do
-			local dir = axis * sign
-			local filled = false
-			for lift = -1, 1 do
-				local at = center + dir * Mat.FELT + up * (lift * Mat.FELT)
-				if occupied[Mat.FeltCell(at:Unpack())] then
-					filled = true
-					break
-				end
-			end
-			if not filled then
-				local from = center + up * 8
-				filled = util.TraceLine({ start = from, endpos = from + dir * Mat.FELT, mask = MASK_SOLID_BRUSHONLY }).Hit
-			end
-			if not filled then return false end
-		end
-	end
-	return true
+	return flat
 end
 
 function ENT:Settling(now)
@@ -109,10 +77,9 @@ function ENT:Settling(now)
 		return
 	end
 
-	local groups, blocked, occupied = {}, {}, {}
+	local groups, blocked = {}, {}
 	for _, node in pairs(mat.nodes) do
 		local cell = Mat.FeltCell(node.x, node.y, node.z)
-		occupied[cell] = true
 		if not node.bucket then node.bucket = Mat.Bucket(node.normal) end
 		local key = not node.felt and not node.air and Key(cell, node.bucket)
 		if key and not blocked[key] then
@@ -133,9 +100,8 @@ function ENT:Settling(now)
 	local stirring = self:Stirring()
 	local folds = 0
 	for key, g in pairs(groups) do
-		if not blocked[key] and #g.list >= FOLD_MIN then
+		if not blocked[key] then
 			local first = g.list[1]
-			local bucket = key % 8
 			local clear = true
 			for _, s in ipairs(stirring) do
 				local r = s[2] + KEEP_CLEAR + Mat.FELT
@@ -144,8 +110,8 @@ function ENT:Settling(now)
 					break
 				end
 			end
-			if clear and Flat(g.list) and Hemmed(mat, occupied, g.cell, bucket, first.pos) then
-				mat:Fold(g.list, g.cell, now)
+			if clear then
+				self:Opened(mat:Fold(Flat(g.list), g.cell, now))
 				folds = folds + 1
 				if folds >= most then break end
 			end

@@ -361,6 +361,22 @@ function Mat:Fold(list, cell, now)
 	return felt
 end
 
+function Mat:Bud(felt, dir, now)
+	local n = felt.normal
+	dir = dir - n * dir:Dot(n)
+	if dir:LengthSqr() < 1e-6 then return end
+	dir:Normalize()
+	local lift = felt.pos + n * LIFT
+	local rim = felt.pos + dir * (FELT_HALF - STEP * 0.5)
+	if util.TraceLine({ start = lift, endpos = rim + n * LIFT, mask = MASK }).Hit then return end
+	local pos, normal = self:Walk({ pos = rim, normal = n }, dir)
+	if not pos or self:Crowded(pos, normal) then return end
+	if bit.band(util.PointContents(pos + normal * 2), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
+	local node = self:Add(pos, normal)
+	self:Link(felt, node, now)
+	return node
+end
+
 local function Nearest(list, pos)
 	local best, bestD2 = nil, math.huge
 	for _, node in ipairs(list) do

@@ -48,6 +48,8 @@ local DEBT_CAP = 3
 local SPROUTS_PER_TICK = 48
 local OVERGROW_EXTRA = 24
 local OVERGROW_TRIES = 3
+local BUD_TRIES = 8
+local OVERGROW_SPINS = 400
 local OVERGROW_CAP = 5000
 local FLOW_SUBSTEPS = 4
 local MIN_DECIDE = 0.08
@@ -588,7 +590,7 @@ function ENT:Slump(dt)
 end
 
 local function Frontier(node)
-	return node.m > GROW_MASS and not node.burn and not node.heat and not node.felt
+	return node.m > GROW_MASS and not node.burn and not node.heat
 end
 
 -- The newest catch still within reach of rescue. The body goes and sits with it.
@@ -611,7 +613,13 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
 	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
 	local node
-	if rise then node = self.Mat:Rise(from, dir, now) else node = self.Mat:Grow(from, dir, now, spacing) end
+	if rise then
+		node = self.Mat:Rise(from, dir, now)
+	elseif from.felt then
+		node = self.Mat:Bud(from, dir, now)
+	else
+		node = self.Mat:Grow(from, dir, now, spacing)
+	end
 	if not node then return end
 	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
 	if catch then self.Mat:Weave(node, catch) end
@@ -638,6 +646,16 @@ local function Close(open, node)
 	list[n], open.at[node] = nil, nil
 end
 
+function ENT:Opened(node)
+	if self.Open and node then Open(self.Open, node) end
+end
+
+local function Heading(node)
+	local ang = node.normal:Angle()
+	local a = (node.tries or 0) / BUD_TRIES * math.pi * 2 + math.Rand(-0.3, 0.3)
+	return ang:Right() * math.cos(a) + ang:Up() * math.sin(a)
+end
+
 function ENT:Overgrow(now)
 	local open = self.Open
 	if not open then
@@ -646,18 +664,21 @@ function ENT:Overgrow(now)
 		for _, node in pairs(self.Mat.nodes) do Open(open, node) end
 	end
 	if EvilFungus.Strands() - EvilFungus.Settled() >= OVERGROW_CAP then return end
-	while (EvilFungus.SproutsLeft or 0) > 0 and #open.list > 0 do
+	local mat, spins = self.Mat, 0
+	while (EvilFungus.SproutsLeft or 0) > 0 and #open.list > 0 and spins < OVERGROW_SPINS do
+		spins = spins + 1
 		local node = open.list[math.random(#open.list)]
-		if node.dead or node.air or node.burn or node.felt then
+		if node.dead or node.air or node.burn then
 			Close(open, node)
 		else
-			local made = self:Sprout(node, VectorRand(), now)
+			local dir = node.felt and Heading(node) or VectorRand()
+			local made = not (node.felt and mat:Covered(node.pos + dir * Mat.FELT, node.normal)) and self:Sprout(node, dir, now)
 			if self.Absorbed then return end
 			if made then
 				Open(open, made)
 			else
 				node.tries = (node.tries or 0) + 1
-				if node.tries >= OVERGROW_TRIES then Close(open, node) end
+				if node.tries >= (node.felt and BUD_TRIES or OVERGROW_TRIES) then Close(open, node) end
 			end
 		end
 	end
