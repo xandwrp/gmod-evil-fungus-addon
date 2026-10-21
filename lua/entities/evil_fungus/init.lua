@@ -1,6 +1,7 @@
 AddCSLuaFile("cl_init.lua")
 AddCSLuaFile("shared.lua")
 include("shared.lua")
+if not Evil then return end
 include("evil_fungus/sv_mat.lua")
 include("sv_feel.lua")
 include("sv_debug.lua")
