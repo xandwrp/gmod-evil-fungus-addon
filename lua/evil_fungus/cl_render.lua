@@ -532,25 +532,30 @@ local function Clean()
 end
 
 function EvilFungus.DrawPass(name, draw)
-	local ran = false
-	local function Run()
+	local drawn
+	local function Run(depth, sky, sky3d)
+		if not EvilFungus.MainView(depth, sky, sky3d) then return end
+		drawn = FrameNumber()
 		Clean()
+		local clip = not render.GetRenderTarget() and render.EnableClipping(false)
 		cam.PushModelMatrix(IDENTITY)
 		local ok, err = pcall(draw)
 		cam.PopModelMatrix()
+		if clip then render.EnableClipping(true) end
 		if not ok then ErrorNoHalt("Evil Fungus couldn't draw: ", err, "\n") end
 	end
-	hook.Add("PostDrawOpaqueRenderables", name, function(depth, sky, sky3d)
-		if not EvilFungus.MainView(depth, sky, sky3d) then return end
-		ran = true
-		Run()
-	end)
-	hook.Add("PreDrawTranslucentRenderables", name, function(depth, sky, sky3d)
-		if ran then
-			ran = false
-			return
-		end
-		if EvilFungus.MainView(depth, sky, sky3d) then Run() end
+	local function Late(depth, sky, sky3d)
+		if drawn ~= FrameNumber() then Run(depth, sky, sky3d) end
+	end
+	local function Reset(depth, _, sky3d)
+		if not depth and not sky3d then drawn = nil end
+	end
+	hook.Add("PreDrawOpaqueRenderables", name, Reset)
+	hook.Add("PostDrawOpaqueRenderables", name, Run)
+	hook.Add("PreDrawTranslucentRenderables", name, Late)
+	hook.Add("PostDrawTranslucentRenderables", name, function(depth, sky, sky3d)
+		Late(depth, sky, sky3d)
+		Reset(depth, sky, sky3d)
 	end)
 end
 
