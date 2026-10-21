@@ -42,13 +42,13 @@ local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
 local TEX_STRETCH = 1.4
-local PATCH_GRID = 4
-local PATCH_HALF = 38
-local PATCH_LIFT = { 0.3, 1.8 }
-local PATCH_RAGGED = 0.4
-local PATCH_REACH = 16
-local PATCH_FACING = 0.5
-local PATCH_TEX = 2
+local WEB_POINTS = 14
+local WEB_HALF = 40
+local WEB_LINKS = 2
+local WEB_REACH = 16
+local WEB_FACING = 0.5
+local WEB_THICK = 2
+local VEIN_SHOWN = 4
 local VIEW_SLACK = 16
 
 local COST_SMOOTH = 0.05
@@ -266,65 +266,40 @@ local function Radius(e)
 	return Lerp(e.level / LEVELS, R_THIN, R_THICK)
 end
 
-local function Shape(node)
-	local shape = node.patch
-	if shape then return shape end
+local function Web(node)
+	local web = node.web
+	if web then return web end
+	web = {}
+	node.web = web
 	local n = node.normal
 	local ang = n:Angle()
 	local right, up = ang:Right(), ang:Up()
-	local pts, quads = {}, 0
-	for i = 0, PATCH_GRID do
-		pts[i] = {}
-		for j = 0, PATCH_GRID do
-			local u, v = i / PATCH_GRID * 2 - 1, j / PATCH_GRID * 2 - 1
-			local rim = math.max(math.abs(u), math.abs(v)) >= 1
-			local pull = rim and 1 - PATCH_RAGGED * Hash(node.nid * 31 + i * 7 + j) or 1
-			local start = node.pos + n * PATCH_REACH + (right * u + up * v) * PATCH_HALF * pull
-			local tr = util.TraceLine({ start = start, endpos = start - n * PATCH_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
-			if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > PATCH_FACING then
-				local lift = rim and PATCH_LIFT[1] or Lerp(Hash(node.nid * 17 + i * 5 + j * 3), PATCH_LIFT[1], PATCH_LIFT[2])
-				local c = render.ComputeLighting(tr.HitPos + tr.HitNormal * 3, tr.HitNormal)
-				pts[i][j] = {
-					pos = tr.HitPos + tr.HitNormal * lift, normal = tr.HitNormal,
-					u = i / PATCH_GRID * PATCH_TEX, v = j / PATCH_GRID * PATCH_TEX,
-					light = math.min(1.5, 0.1 + math.sqrt((c.x + c.y + c.z) / 3) * 1.25),
-					tint = rim and 0 or Hash(node.nid * 13 + i + j * 11) * 0.6,
-				}
+	local pts = {}
+	for i = 1, WEB_POINTS do
+		local u, v = Hash(node.nid * 31 + i) * 2 - 1, Hash(node.nid * 57 + i * 3) * 2 - 1
+		local start = node.pos + n * WEB_REACH + (right * u + up * v) * WEB_HALF
+		local tr = util.TraceLine({ start = start, endpos = start - n * WEB_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
+		if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > WEB_FACING then
+			pts[#pts + 1] = { pos = tr.HitPos, normal = tr.HitNormal }
+		end
+	end
+	local seen = {}
+	for i, a in ipairs(pts) do
+		local near = {}
+		for j, b in ipairs(pts) do
+			if j ~= i then near[#near + 1] = { j, a.pos:DistToSqr(b.pos) } end
+		end
+		table.sort(near, function(x, y) return x[2] < y[2] end)
+		for k = 1, math.min(WEB_LINKS, #near) do
+			local j = near[k][1]
+			local key = math.min(i, j) * 64 + math.max(i, j)
+			if not seen[key] then
+				seen[key] = true
+				web[#web + 1] = { a = a, b = pts[j], eid = node.nid * 4096 + key }
 			end
 		end
 	end
-	for i = 0, PATCH_GRID - 1 do
-		for j = 0, PATCH_GRID - 1 do
-			if pts[i][j] and pts[i + 1][j] and pts[i + 1][j + 1] and pts[i][j + 1] then quads = quads + 1 end
-		end
-	end
-	shape = { pts = pts, quads = quads }
-	node.patch = shape
-	return shape
-end
-
-local function PatchVert(p)
-	Position(p.pos)
-	Normal(p.normal)
-	TexCoord(0, p.u, p.v)
-	local l = p.light
-	Colour(math.min(255, Lerp(p.tint, ROOT[1], VEIN[1]) * l), math.min(255, Lerp(p.tint, ROOT[2], VEIN[2]) * l), math.min(255, Lerp(p.tint, ROOT[3], VEIN[3]) * l), 255)
-	Advance()
-end
-
-local function Patch(shape)
-	local pts = shape.pts
-	for i = 0, PATCH_GRID - 1 do
-		for j = 0, PATCH_GRID - 1 do
-			local a, b, c, d = pts[i][j], pts[i + 1][j], pts[i + 1][j + 1], pts[i][j + 1]
-			if a and b and c and d then
-				PatchVert(a)
-				PatchVert(b)
-				PatchVert(c)
-				PatchVert(d)
-			end
-		end
-	end
+	return web
 end
 
 local function Build(chunk)
@@ -337,33 +312,41 @@ local function Build(chunk)
 		return
 	end
 
-	local patches, quads, shaped = {}, 0, 0
+	local webs, quads, shaped = {}, 0, 0
 	for node in pairs(chunk.patches) do
-		local shape = node.patch
-		if not shape and shaped < SHAPES_PER_BUILD then
+		local web = node.web
+		if not web and shaped < SHAPES_PER_BUILD then
 			shaped = shaped + 1
-			shape = Shape(node)
-		elseif not shape then
+			web = Web(node)
+		elseif not web then
 			chunk.due = RealTime()
 		end
-		if shape and shape.quads > 0 and quads + shape.quads <= MAX_CHUNK_QUADS then
-			patches[#patches + 1] = shape
-			quads = quads + shape.quads
+		if web and #web > 0 and quads + #web * ROOT_SIDES <= MAX_CHUNK_QUADS then
+			webs[#webs + 1] = web
+			quads = quads + #web * ROOT_SIDES
 		end
 	end
 
 	local list, tube = {}, SEGMENTS * ROOT_SIDES
 	for e in pairs(chunk.edges) do
 		if #list >= MAX_CHUNK_EDGES or quads + tube > MAX_CHUNK_QUADS then break end
-		list[#list + 1] = e
-		quads = quads + tube
+		if not (e.a.felt or e.b.felt) or e.level >= VEIN_SHOWN then
+			list[#list + 1] = e
+			quads = quads + tube
+		end
 	end
 	if quads <= 0 then return end
 
 	local im = Mesh(MAT)
 	mesh.Begin(im, MATERIAL_QUADS, quads)
 	local ok, err = pcall(function()
-		for _, shape in ipairs(patches) do Patch(shape) end
+		for _, web in ipairs(webs) do
+			for _, e in ipairs(web) do
+				local tint = 0.9 + 0.2 * Hash(e.eid + 7)
+				local r = R_THIN * Lerp(Hash(e.eid + 11), 1, WEB_THICK)
+				Tube(e, r, r * TAPER, ROOT_SIDES, ROOT[1] * tint, ROOT[2] * tint, ROOT[3] * tint, 1)
+			end
+		end
 		for _, e in ipairs(list) do
 			local k = e.level / LEVELS
 			local tint = 0.9 + 0.2 * Hash(e.eid + 7)
