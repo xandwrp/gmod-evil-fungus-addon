@@ -60,7 +60,7 @@ local WEB_INSET = 0.004
 local VEIN_SHOWN = 4
 local VIEW_SLACK = 16
 
-local WEB_RT = GetRenderTargetEx("evil_fungus_web", WEB_SIZE * 2, WEB_SIZE * 2, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_RGBA8888)
+local WEB_RT = GetRenderTargetEx("evil_fungus_webs", WEB_SIZE * 2, WEB_SIZE * 2, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_BGRA8888)
 local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
 	["$basetexture"] = WEB_RT:GetName(),
 	["$vertexcolor"] = 1,
