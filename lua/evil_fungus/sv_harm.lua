@@ -7,6 +7,8 @@ local SCAN = 0.25
 local BURN_TIME = 3
 local SPREAD = 0.15
 local CATCH = 0.5
+local LEAP = 0.1
+local LEAP_RADIUS = 48
 local SCORCH = 0.15
 local CUT_RADIUS = 12
 local BLAST_KILL = 0.6
@@ -165,11 +167,24 @@ local function Scan(now)
 	Retreat()
 end
 
+local function Leap(node, now)
+	if node.dead then return end
+	local from = node.pos + node.normal * LIFT
+	for _, colony in ipairs(Around(node.pos, LEAP_RADIUS)) do
+		local mat, near = colony.Mat, {}
+		mat:Near(node.pos, LEAP_RADIUS, function(other)
+			if other ~= node and not other.burn and not mat:Linked(node, other) then near[#near + 1] = other end
+		end)
+		local other = near[math.random(math.max(1, #near))]
+		if other and Clear(from, other) then Harm.Ignite(colony, other, now) end
+	end
+end
+
 local function Burn(now)
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		local mat = IsValid(colony) and not colony.Absorbed and colony.Mat
 		if mat and next(mat.burning) then
-			local spread, burnt = {}, {}
+			local spread, burnt, leap = {}, {}, {}
 			for node, at in pairs(mat.burning) do
 				if node.dead then
 					mat.burning[node] = nil
@@ -180,9 +195,11 @@ local function Burn(now)
 						local other = e.a == node and e.b or e.a
 						if not other.burn and math.random() < SPREAD then spread[#spread + 1] = other end
 					end
+					if math.random() < LEAP then leap[#leap + 1] = node end
 				end
 			end
 			for _, node in ipairs(spread) do Harm.Ignite(colony, node, now) end
+			for _, node in ipairs(leap) do Leap(node, now) end
 			for _, node in ipairs(burnt) do Kill(colony, node, true) end
 		end
 	end
