@@ -43,6 +43,8 @@ EvilFungus.SETTINGS = {
 		help = "Runs the fungus faster or slower than the game: growth, flow, sensing, putting people under and consuming them" },
 	{ name = "max_nodes", default = 2500, min = 200, max = 15000, decimals = 0, label = "Mat size",
 		help = "Most strands all the fungus on the map can lay together before it stops spreading" },
+	{ name = "settle", default = 0, min = 0, max = 1, label = "Settled mat",
+		help = "Experimental. Quiet stretches of mat fold into big patches that count as one strand, so it can cover far more ground. They unfold when anything gets close" },
 	{ name = "start_mass", default = 60, min = 10, max = 400, decimals = 0, label = "Starting body",
 		help = "How much body a fresh fungus has to spread with" },
 	{ name = "grow_speed", default = 1, min = 0, max = 10, decimals = 2, label = "Spread speed",

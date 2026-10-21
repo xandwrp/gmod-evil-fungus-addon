@@ -14,7 +14,7 @@ net.Receive("EvilFungusBurn", function()
 end)
 
 local function Flame(emitter, node)
-	local p = emitter:Add(FLAMES[math.random(#FLAMES)], node.pos + node.normal * 2 + VectorRand() * 3)
+	local p = emitter:Add(FLAMES[math.random(#FLAMES)], node.pos + node.normal * 2 + VectorRand() * (node.felt and 28 or 3))
 	if not p then return false end
 	p:SetVelocity(node.normal * math.Rand(15, 35) + VectorRand() * 5)
 	p:SetDieTime(math.Rand(0.3, 0.6))

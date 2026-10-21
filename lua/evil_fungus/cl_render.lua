@@ -40,6 +40,13 @@ local BODY_GONE = 0.01
 local PULSE, PULSE_RATE, PULSE_SPREAD = 0.15, 2.5, 0.9
 local SHADE_LOW = 0.55
 local TEX_STRETCH = 1.4
+local PATCH_GRID = 4
+local PATCH_HALF = 38
+local PATCH_LIFT = { 0.3, 1.8 }
+local PATCH_RAGGED = 0.4
+local PATCH_REACH = 16
+local PATCH_FACING = 0.5
+local PATCH_TEX = 2
 local VIEW_SLACK = 16
 
 local COST_SMOOTH = 0.05
@@ -257,6 +264,67 @@ local function Radius(e)
 	return Lerp(e.level / LEVELS, R_THIN, R_THICK)
 end
 
+local function Shape(node)
+	local shape = node.patch
+	if shape then return shape end
+	local n = node.normal
+	local ang = n:Angle()
+	local right, up = ang:Right(), ang:Up()
+	local pts, quads = {}, 0
+	for i = 0, PATCH_GRID do
+		pts[i] = {}
+		for j = 0, PATCH_GRID do
+			local u, v = i / PATCH_GRID * 2 - 1, j / PATCH_GRID * 2 - 1
+			local rim = math.max(math.abs(u), math.abs(v)) >= 1
+			local pull = rim and 1 - PATCH_RAGGED * Hash(node.nid * 31 + i * 7 + j) or 1
+			local start = node.pos + n * PATCH_REACH + (right * u + up * v) * PATCH_HALF * pull
+			local tr = util.TraceLine({ start = start, endpos = start - n * PATCH_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
+			if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > PATCH_FACING then
+				local lift = rim and PATCH_LIFT[1] or Lerp(Hash(node.nid * 17 + i * 5 + j * 3), PATCH_LIFT[1], PATCH_LIFT[2])
+				local c = render.ComputeLighting(tr.HitPos + tr.HitNormal * 3, tr.HitNormal)
+				pts[i][j] = {
+					pos = tr.HitPos + tr.HitNormal * lift, normal = tr.HitNormal,
+					u = i / PATCH_GRID * PATCH_TEX, v = j / PATCH_GRID * PATCH_TEX,
+					light = math.min(1.5, 0.1 + math.sqrt((c.x + c.y + c.z) / 3) * 1.25),
+					tint = rim and 0 or Hash(node.nid * 13 + i + j * 11) * 0.6,
+				}
+			end
+		end
+	end
+	for i = 0, PATCH_GRID - 1 do
+		for j = 0, PATCH_GRID - 1 do
+			if pts[i][j] and pts[i + 1][j] and pts[i + 1][j + 1] and pts[i][j + 1] then quads = quads + 1 end
+		end
+	end
+	shape = { pts = pts, quads = quads }
+	node.patch = shape
+	return shape
+end
+
+local function PatchVert(p)
+	Position(p.pos)
+	Normal(p.normal)
+	TexCoord(0, p.u, p.v)
+	local l = p.light
+	Colour(math.min(255, Lerp(p.tint, ROOT[1], VEIN[1]) * l), math.min(255, Lerp(p.tint, ROOT[2], VEIN[2]) * l), math.min(255, Lerp(p.tint, ROOT[3], VEIN[3]) * l), 255)
+	Advance()
+end
+
+local function Patch(shape)
+	local pts = shape.pts
+	for i = 0, PATCH_GRID - 1 do
+		for j = 0, PATCH_GRID - 1 do
+			local a, b, c, d = pts[i][j], pts[i + 1][j], pts[i + 1][j + 1], pts[i][j + 1]
+			if a and b and c and d then
+				PatchVert(a)
+				PatchVert(b)
+				PatchVert(c)
+				PatchVert(d)
+			end
+		end
+	end
+end
+
 local function Build(chunk)
 	if chunk.mesh then
 		chunk.mesh:Destroy()
@@ -273,9 +341,20 @@ local function Build(chunk)
 		if #list >= MAX_CHUNK_EDGES then break end
 	end
 
+	local patches, quads = {}, #list * SEGMENTS * ROOT_SIDES
+	for node in pairs(chunk.patches) do
+		local shape = Shape(node)
+		if shape.quads > 0 then
+			patches[#patches + 1] = shape
+			quads = quads + shape.quads
+		end
+	end
+	if quads <= 0 then return end
+
 	local im = Mesh(MAT)
-	mesh.Begin(im, MATERIAL_QUADS, #list * SEGMENTS * ROOT_SIDES)
+	mesh.Begin(im, MATERIAL_QUADS, quads)
 	local ok, err = pcall(function()
+		for _, shape in ipairs(patches) do Patch(shape) end
 		for _, e in ipairs(list) do
 			local k = e.level / LEVELS
 			local tint = 0.9 + 0.2 * Hash(e.eid + 7)
@@ -596,14 +675,16 @@ end)
 hook.Add("HUDPaint", "EvilFungusCost", function()
 	if not cv_cost:GetBool() then return end
 	local M, c = EvilFungus.Client, EvilFungus.Cost
-	local chunks, strands = 0, 0
+	local chunks, strands, patches = 0, 0, 0
 	for _, chunk in pairs(M.chunks) do
 		chunks = chunks + 1
 		strands = strands + chunk.count
+		for _ in pairs(chunk.patches or {}) do patches = patches + 1 end
 	end
+	strands = strands - patches
 	local lines = {
 		("rebuilding mat  %.2f ms"):format(c.rebuild or 0),
-		("drawing mat     %.2f ms  (%d chunks, %d strands)"):format(c.chunks or 0, chunks, strands),
+		("drawing mat     %.2f ms  (%d chunks, %d strands, %d settled)"):format(c.chunks or 0, chunks, strands, patches),
 		("drawing body    %.2f ms  (%d strands)"):format(c.body or 0, M.bodyDrawn or 0),
 		("sleepers        %.2f ms"):format(c.sleepers or 0),
 		("synced          %d of %d nodes"):format(M.count or 0, GetGlobal2Int(EvilFungus.NODES_VAR, 0)),

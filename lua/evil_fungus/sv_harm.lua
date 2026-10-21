@@ -70,8 +70,10 @@ end
 
 function Harm.Cut(pos, radius)
 	if not On() then return end
+	local now = CurTime()
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
+		colony.Mat:Wake(pos, radius, now)
 		colony.Mat:Near(pos, radius, function(node) hit[#hit + 1] = node end)
 		for _, node in ipairs(hit) do Kill(colony, node) end
 	end
@@ -87,6 +89,7 @@ function Harm.Blast(pos, radius)
 	local kill2 = (radius * BLAST_KILL) ^ 2
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
+		colony.Mat:Wake(pos, radius, now)
 		colony.Mat:Near(pos, radius, function(node, d2) hit[#hit + 1] = { node, d2 } end)
 		for _, h in ipairs(hit) do
 			local node, d2 = h[1], h[2]
@@ -100,6 +103,7 @@ end
 local function Catch(pos, radius, now)
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
+		colony.Mat:Wake(pos, radius, now)
 		colony.Mat:Near(pos, radius, function(node) hit[#hit + 1] = node end)
 		for _, node in ipairs(hit) do
 			if math.random() < CATCH then Harm.Ignite(colony, node, now) end

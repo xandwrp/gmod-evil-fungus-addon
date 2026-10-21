@@ -5,6 +5,7 @@ if not Evil then return end
 include("evil_fungus/sv_mat.lua")
 include("sv_feel.lua")
 include("sv_debug.lua")
+include("sv_settle.lua")
 
 local Mat = EvilFungus.Mat
 local EMPTY = Mat.EMPTY
@@ -180,6 +181,9 @@ function ENT:Think()
 		if self.Absorbed then return end
 		self:Spores(dt)
 		t = self:Cost("grow", t)
+		self:Settling(now)
+		self:Rouse(now)
+		t = self:Cost("settle", t)
 		self:Feel(now)
 		self:Cost("feel", t)
 	else
@@ -573,7 +577,7 @@ function ENT:Slump(dt)
 end
 
 local function Frontier(node)
-	return node.m > GROW_MASS and not node.burn and not node.heat
+	return node.m > GROW_MASS and not node.burn and not node.heat and not node.felt
 end
 
 -- The newest catch still within reach of rescue. The body goes and sits with it.

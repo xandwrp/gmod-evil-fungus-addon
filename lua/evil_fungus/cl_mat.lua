@@ -26,16 +26,19 @@ local SHORT = 0.5
 
 M.LEVELS = LEVELS
 
-local function ChunkFor(e)
-	local mid = (e.a.pos + e.b.pos) * 0.5
-	local ix, iy, iz = math.floor(mid.x / CHUNK), math.floor(mid.y / CHUNK), math.floor(mid.z / CHUNK)
+local function ChunkAt(pos)
+	local ix, iy, iz = math.floor(pos.x / CHUNK), math.floor(pos.y / CHUNK), math.floor(pos.z / CHUNK)
 	local key = (ix + 512) * 1048576 + (iy + 512) * 1024 + (iz + 512)
 	local chunk = M.chunks[key]
 	if not chunk then
-		chunk = { key = key, edges = {}, count = 0, center = Vector((ix + 0.5) * CHUNK, (iy + 0.5) * CHUNK, (iz + 0.5) * CHUNK) }
+		chunk = { key = key, edges = {}, patches = {}, count = 0, center = Vector((ix + 0.5) * CHUNK, (iy + 0.5) * CHUNK, (iz + 0.5) * CHUNK) }
 		M.chunks[key] = chunk
 	end
 	return chunk
+end
+
+local function ChunkFor(e)
+	return ChunkAt((e.a.pos + e.b.pos) * 0.5)
 end
 
 function M.Stale(chunk, delay)
@@ -66,10 +69,18 @@ end
 net.Receive("EvilFungusMat", function()
 	for _ = 1, net.ReadUInt(8) do
 		local nid = net.ReadUInt(24)
-		local pos, normal = net.ReadVector(), net.ReadNormal()
+		local pos, normal, felt = net.ReadVector(), net.ReadNormal(), net.ReadBool()
 		if not M.nodes[nid] then
-			M.nodes[nid] = { nid = nid, pos = pos, normal = normal, edges = {}, target = 0, shown = 0 }
+			local node = { nid = nid, pos = pos, normal = normal, edges = {}, target = 0, shown = 0, felt = felt or nil }
+			M.nodes[nid] = node
 			M.count = M.count + 1
+			if felt then
+				local chunk = ChunkAt(pos)
+				node.chunk = chunk
+				chunk.patches[node] = true
+				chunk.count = chunk.count + 1
+				M.Stale(chunk, GROWN)
+			end
 		end
 	end
 	for _ = 1, net.ReadUInt(8) do
@@ -94,6 +105,12 @@ net.Receive("EvilFungusDrop", function()
 		local node = M.nodes[net.ReadUInt(24)]
 		if node then
 			for i = #node.edges, 1, -1 do RemoveEdge(node.edges[i]) end
+			local chunk = node.chunk
+			if chunk and chunk.patches[node] then
+				chunk.patches[node] = nil
+				chunk.count = chunk.count - 1
+				M.Stale(chunk, GROWN)
+			end
 			M.nodes[node.nid] = nil
 			M.count = M.count - 1
 			M.body[node] = nil

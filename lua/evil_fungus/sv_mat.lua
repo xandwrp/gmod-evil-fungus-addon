@@ -17,19 +17,41 @@ local D_GAIN = 0.06
 local D_DECAY = 0.004
 local EMPTY = 0.01
 local RISE_MIN = 0.1
+local FELT = 64
+local FELT_HALF = FELT / 2
+local FELT_FLAT = 12
+local FELT_DROP = 24
+local FELT_FACING = 0.5
+local FELT_GRID = 4
+local FELT_LATTICE = FELT / FELT_GRID
+local FELT_SPACING = 8
 
 Mat.STEP = STEP
+Mat.FELT = FELT
 Mat.D_FLOOR = D_FLOOR
 Mat.D_MAX = D_MAX
 Mat.EMPTY = EMPTY
 Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
-	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, woven = {}, wovenCount = 0, nextId = 1 }, Mat)
+	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, woven = {}, wovenCount = 0,
+		settled = {}, felt = {}, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
 	return (ix + 512) * 1048576 + (iy + 512) * 1024 + (iz + 512)
+end
+
+function Mat.Bucket(normal)
+	local x, y, z = normal:Unpack()
+	local ax, ay, az = math.abs(x), math.abs(y), math.abs(z)
+	if az >= ax and az >= ay then return z > 0 and 0 or 1 end
+	if ax >= ay then return x > 0 and 2 or 3 end
+	return y > 0 and 4 or 5
+end
+
+function Mat.FeltCell(x, y, z)
+	return Key(math.floor(x / FELT), math.floor(y / FELT), math.floor(z / FELT))
 end
 
 local function Place(self, node)
@@ -66,7 +88,7 @@ local function Unpack(node)
 end
 
 function Mat:Add(pos, normal, height)
-	local node = { pos = pos, normal = normal, m = 0, edges = {}, air = height and true or nil, height = height or 0 }
+	local node = { pos = pos, normal = normal, m = 0, edges = {}, air = height and true or nil, height = height or 0, born = CurTime() }
 	Unpack(node)
 	Place(self, node)
 	if EvilFungus.Net then EvilFungus.Net.Node(node) end
@@ -79,8 +101,14 @@ function Mat:Absorb(other)
 	for node, at in pairs(other.burning) do self.burning[node] = at end
 	for node in pairs(other.woven) do self.woven[node] = true end
 	self.wovenCount = self.wovenCount + other.wovenCount
+	for node in pairs(other.settled) do
+		self.settled[node] = true
+		local set = self.felt[node.felt] or {}
+		set[node] = true
+		self.felt[node.felt] = set
+	end
 	other.nodes, other.cells, other.full, other.air, other.burning, other.count = {}, {}, {}, {}, {}, 0
-	other.woven, other.wovenCount = {}, 0
+	other.woven, other.wovenCount, other.settled, other.felt = {}, 0, {}, {}
 	other.mins, other.maxs = nil, nil
 end
 
@@ -103,6 +131,14 @@ function Mat:Remove(node)
 	if self.woven[node] then
 		self.woven[node] = nil
 		self.wovenCount = self.wovenCount - 1
+	end
+	if node.felt then
+		self.settled[node] = nil
+		local set = self.felt[node.felt]
+		if set then
+			set[node] = nil
+			if next(set) == nil then self.felt[node.felt] = nil end
+		end
 	end
 	self.nodes[node.id] = nil
 	self.count = self.count - 1
@@ -127,8 +163,8 @@ function Mat:Linked(a, b)
 	return false
 end
 
-function Mat:Link(a, b, now)
-	local e = { a = a, b = b, len = math.max(1, a.pos:Distance(b.pos)), D = D_FLOOR, t = now }
+function Mat:Link(a, b, now, D)
+	local e = { a = a, b = b, len = math.max(1, a.pos:Distance(b.pos)), D = D or D_FLOOR, t = now }
 	a.edges[#a.edges + 1] = e
 	b.edges[#b.edges + 1] = e
 	if EvilFungus.Net then EvilFungus.Net.Edge(e) end
@@ -220,7 +256,18 @@ function Mat.Reaches(a, b)
 	return not util.TraceLine({ start = a.pos + a.normal * LIFT, endpos = b.pos + b.normal * LIFT, mask = MASK }).Hit
 end
 
+function Mat:Covered(pos, normal)
+	local set = next(self.settled) and self.felt[Mat.FeltCell(pos:Unpack())]
+	if not set then return false end
+	local bucket = Mat.Bucket(normal)
+	for node in pairs(set) do
+		if node.bucket == bucket and math.abs((pos - node.pos):Dot(node.normal)) < FELT_FLAT then return true end
+	end
+	return false
+end
+
 function Mat:Crowded(pos, normal, spacing)
+	if self:Covered(pos, normal) then return true end
 	local crowded = false
 	self:Near(pos, spacing or SPACING, function(node)
 		if node.normal:Dot(normal) > 0.3 then
@@ -260,6 +307,161 @@ function Mat:Rise(from, dir, now)
 	local node = self:Add(pos, from.normal, from.height + 1)
 	self:Link(from, node, now)
 	return node
+end
+
+local function Surface(start, normal, reach)
+	local tr = util.TraceLine({ start = start + normal * reach, endpos = start - normal * reach * 1.5, mask = MASK })
+	if not tr.Hit or tr.StartSolid or tr.HitSky or tr.HitNoDraw or tr.HitNormal:Dot(normal) < FELT_FACING then return end
+	return tr.HitPos, tr.HitNormal
+end
+
+function Mat:Fold(list, cell, now)
+	local inside, m, cx, cy, cz, nx, ny, nz = {}, 0, 0, 0, 0, 0, 0, 0
+	for _, node in ipairs(list) do
+		inside[node] = true
+		m = m + node.m
+		cx, cy, cz = cx + node.x, cy + node.y, cz + node.z
+		local a, b, c = node.normal:Unpack()
+		nx, ny, nz = nx + a, ny + b, nz + c
+	end
+	local n = #list
+	local mid, up = Vector(cx / n, cy / n, cz / n), Vector(nx, ny, nz):GetNormalized()
+	local pos, normal = Surface(mid, up, FELT_DROP)
+	if not pos then
+		local best, bestD2 = list[1], math.huge
+		for _, node in ipairs(list) do
+			local d2 = node.pos:DistToSqr(mid)
+			if d2 < bestD2 then best, bestD2 = node, d2 end
+		end
+		pos, normal = best.pos, best.normal
+	end
+
+	local links = {}
+	for _, node in ipairs(list) do
+		for _, e in ipairs(node.edges) do
+			local other = e.a == node and e.b or e.a
+			if not inside[other] then links[other] = math.max(links[other] or 0, self:Conductance(e, now)) end
+		end
+	end
+	for _, node in ipairs(list) do self:Remove(node) end
+
+	local felt = self:Add(pos, normal)
+	felt.felt, felt.bucket, felt.folded = cell, Mat.Bucket(normal), n
+	self.settled[felt] = true
+	local set = self.felt[cell] or {}
+	set[felt] = true
+	self.felt[cell] = set
+	self:SetMass(felt, m)
+	for other, D in pairs(links) do
+		if not other.dead then self:Link(felt, other, now, D) end
+	end
+	return felt
+end
+
+local function Nearest(list, pos)
+	local best, bestD2 = nil, math.huge
+	for _, node in ipairs(list) do
+		local d2 = node.pos:DistToSqr(pos)
+		if d2 < bestD2 then best, bestD2 = node, d2 end
+	end
+	return best
+end
+
+function Mat:Unfold(felt, now)
+	local pos, normal, m = felt.pos, felt.normal, felt.m
+	local links = {}
+	for _, e in ipairs(felt.edges) do links[#links + 1] = { e.a == felt and e.b or e.a, self:Conductance(e, now) } end
+	self:Remove(felt)
+
+	local ang = normal:Angle()
+	local right, side = ang:Right(), ang:Up()
+	local grid, made = {}, {}
+	for i = 1, FELT_GRID do
+		grid[i] = {}
+		for j = 1, FELT_GRID do
+			local off = right * ((i - (FELT_GRID + 1) / 2) * FELT_LATTICE) + side * ((j - (FELT_GRID + 1) / 2) * FELT_LATTICE)
+			local p, n = Surface(pos + off, normal, FELT_DROP * 0.5)
+			if p and not self:Crowded(p, n, FELT_SPACING) then
+				local node = self:Add(p, n)
+				grid[i][j] = node
+				made[#made + 1] = node
+			end
+		end
+	end
+	if #made == 0 then made[1] = self:Add(pos, normal) end
+
+	for i = 1, FELT_GRID do
+		for j = 1, FELT_GRID do
+			local node = grid[i][j]
+			if node then
+				local r, u = grid[i + 1] and grid[i + 1][j], grid[i][j + 1]
+				if r and Mat.Reaches(node, r) then self:Link(node, r, now) end
+				if u and Mat.Reaches(node, u) then self:Link(node, u, now) end
+			end
+		end
+	end
+
+	local seen, parts = {}, {}
+	for _, node in ipairs(made) do
+		if not seen[node] then
+			local part, stack = {}, { node }
+			seen[node] = true
+			while #stack > 0 do
+				local at = table.remove(stack)
+				part[#part + 1] = at
+				for _, e in ipairs(at.edges) do
+					local other = e.a == at and e.b or e.a
+					if not seen[other] then
+						seen[other] = true
+						stack[#stack + 1] = other
+					end
+				end
+			end
+			parts[#parts + 1] = part
+		end
+	end
+	for i = 2, #parts do
+		local node = parts[i][1]
+		self:Link(node, Nearest(parts[1], node.pos), now)
+	end
+
+	for _, link in ipairs(links) do
+		local other = link[1]
+		if not other.dead then self:Link(Nearest(made, other.pos), other, now, link[2]) end
+	end
+	local share = m / #made
+	for _, node in ipairs(made) do self:SetMass(node, share) end
+	return made
+end
+
+function Mat:Wake(pos, radius, now)
+	if not next(self.settled) then return end
+	local reach = radius + FELT_HALF
+	local r2 = reach * reach
+	local px, py, pz = pos:Unpack()
+	local x0, y0, z0 = math.floor((px - reach) / FELT), math.floor((py - reach) / FELT), math.floor((pz - reach) / FELT)
+	local x1, y1, z1 = math.floor((px + reach) / FELT), math.floor((py + reach) / FELT), math.floor((pz + reach) / FELT)
+	local woke
+	for ix = x0, x1 do
+		for iy = y0, y1 do
+			for iz = z0, z1 do
+				local set = self.felt[Key(ix, iy, iz)]
+				if set then
+					for node in pairs(set) do
+						if not node.burn and node.pos:DistToSqr(pos) <= r2 then
+							woke = woke or {}
+							woke[#woke + 1] = node
+						end
+					end
+				end
+			end
+		end
+	end
+	if not woke then return end
+	for _, node in ipairs(woke) do
+		if not node.dead then self:Unfold(node, now) end
+	end
+	return true
 end
 
 local function Push(h, d, v)
@@ -327,6 +529,7 @@ for colony in pairs(EvilFungus.Colonies or {}) do
 	if mat and not mat.air then mat.air = {} end
 	if mat and not mat.burning then mat.burning = {} end
 	if mat and not mat.woven then mat.woven, mat.wovenCount = {}, 0 end
+	if mat and not mat.settled then mat.settled, mat.felt = {}, {} end
 	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
 		node.height = node.height or 0
