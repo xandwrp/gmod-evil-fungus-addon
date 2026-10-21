@@ -25,7 +25,7 @@ Mat.EMPTY = EMPTY
 Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
-	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, nextId = 1 }, Mat)
+	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, woven = {}, wovenCount = 0, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
@@ -77,7 +77,10 @@ end
 function Mat:Absorb(other)
 	for _, node in pairs(other.nodes) do Place(self, node) end
 	for node, at in pairs(other.burning) do self.burning[node] = at end
+	for node in pairs(other.woven) do self.woven[node] = true end
+	self.wovenCount = self.wovenCount + other.wovenCount
 	other.nodes, other.cells, other.full, other.air, other.burning, other.count = {}, {}, {}, {}, {}, 0
+	other.woven, other.wovenCount = {}, 0
 	other.mins, other.maxs = nil, nil
 end
 
@@ -97,9 +100,20 @@ function Mat:Remove(node)
 	self.full[node] = nil
 	self.air[node] = nil
 	self.burning[node] = nil
+	if self.woven[node] then
+		self.woven[node] = nil
+		self.wovenCount = self.wovenCount - 1
+	end
 	self.nodes[node.id] = nil
 	self.count = self.count - 1
 	node.dead = true
+end
+
+function Mat:Weave(node, catch)
+	node.weave = catch
+	if self.woven[node] then return end
+	self.woven[node] = true
+	self.wovenCount = self.wovenCount + 1
 end
 
 function Mat:Other(e, node)
@@ -312,6 +326,7 @@ for colony in pairs(EvilFungus.Colonies or {}) do
 	local mat = colony.Mat
 	if mat and not mat.air then mat.air = {} end
 	if mat and not mat.burning then mat.burning = {} end
+	if mat and not mat.woven then mat.woven, mat.wovenCount = {}, 0 end
 	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
 		node.height = node.height or 0

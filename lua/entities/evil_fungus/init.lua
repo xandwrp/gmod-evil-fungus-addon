@@ -41,7 +41,8 @@ local AIR_DROP = 2
 local WEAVE_RATE = 6
 local WEAVE_RADIUS = 64
 local WEAVE_SPACING = 7
-local WEAVE_MAX = 140
+local WEAVE_MAX = 30
+local WEAVE_BUDGET = 240
 local DEBT_CAP = 3
 local SPROUTS_PER_TICK = 48
 local FLOW_SUBSTEPS = 4
@@ -83,7 +84,15 @@ end)
 function EvilFungus.Strands()
 	local n = 0
 	for colony in pairs(EvilFungus.Colonies) do
-		if colony.Mat then n = n + colony.Mat.count end
+		if colony.Mat then n = n + colony.Mat.count - colony.Mat.wovenCount end
+	end
+	return n
+end
+
+function EvilFungus.Woven()
+	local n = 0
+	for colony in pairs(EvilFungus.Colonies) do
+		if colony.Mat then n = n + colony.Mat.wovenCount end
 	end
 	return n
 end
@@ -372,6 +381,7 @@ end
 
 function ENT:Decide(now)
 	self:Settle()
+	if next(self.Mat.woven) then self:Unravel() end
 	if next(self.Mat.air) and now - (self.TunnelAt or -math.huge) > AIR_HOLD then self:Retract() end
 
 	local prey, node = self.Prey, self.PreyNode
@@ -579,7 +589,7 @@ function ENT:Patient()
 	return best
 end
 
-function ENT:Sprout(from, dir, now, spacing, payer, rise)
+function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	if from.burn or from.heat then return end
 	payer = payer or from
 	local cost = GROW_COST * EvilFungus.Setting("grow_cost")
@@ -589,6 +599,7 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise)
 	if rise then node = self.Mat:Rise(from, dir, now) else node = self.Mat:Grow(from, dir, now, spacing) end
 	if not node then return end
 	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
+	if catch then self.Mat:Weave(node, catch) end
 	local goal, target = self.Goal, self.Waypoint or self.Target
 	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
 		self.Goal = node
@@ -641,7 +652,8 @@ function ENT:Spread(dt, now)
 	self.SpreadDebt = math.min(cap, self.SpreadDebt + SPREAD_RATE * sprawl * speed * dt)
 	if self.ReachDebt < 1 and self.SpreadDebt < 1 and not self.Tending then return end
 	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") then
-		self.ReachDebt, self.SpreadDebt, self.WeaveDebt = 0, 0, 0
+		self.ReachDebt, self.SpreadDebt = 0, 0
+		self:Weave(dt, now, speed)
 		return
 	end
 
@@ -698,19 +710,42 @@ end
 -- Around a fresh catch the mat knits itself much tighter than anywhere else.
 function ENT:Weave(dt, now, speed)
 	local s = self.Tending
-	if not s then
+	if not s or (s.woven or 0) >= WEAVE_MAX or EvilFungus.Woven() >= WEAVE_BUDGET then
 		self.WeaveDebt = 0
 		return
 	end
 	local cap = math.min(SPROUTS_PER_TICK, DEBT_CAP * math.max(1, EvilFungus.TimeScale()))
 	self.WeaveDebt = math.min(cap, self.WeaveDebt + WEAVE_RATE * speed * dt)
-	while self.WeaveDebt >= 1 do
+	while self.WeaveDebt >= 1 and (s.woven or 0) < WEAVE_MAX do
 		self.WeaveDebt = self.WeaveDebt - 1
 		local near = {}
 		self.Mat:Near(s.nest.pos, WEAVE_RADIUS, function(node) near[#near + 1] = node end)
-		if #near == 0 or #near >= WEAVE_MAX then return end
-		self:Sprout(near[math.random(#near)], VectorRand(), now, WEAVE_SPACING, s.nest)
+		if #near == 0 then return end
+		if self:Sprout(near[math.random(#near)], VectorRand(), now, WEAVE_SPACING, s.nest, nil, s.rag) then
+			s.woven = (s.woven or 0) + 1
+		end
 		if self.Absorbed then return end
+	end
+end
+
+function ENT:Unravel()
+	local mat, loose = self.Mat, {}
+	for node in pairs(mat.woven) do
+		local s = IsValid(node.weave) and EvilFungus.Sleepers[node.weave]
+		if not s or s.stage == EvilFungus.FREED then loose[#loose + 1] = node end
+	end
+	for _, node in ipairs(loose) do
+		local into
+		for _, e in ipairs(node.edges) do
+			local other = mat:Other(e, node)
+			if not mat.woven[other] then
+				into = other
+				break
+			end
+			into = into or other
+		end
+		if into then mat:SetMass(into, into.m + node.m) end
+		mat:Remove(node)
 	end
 end
 
