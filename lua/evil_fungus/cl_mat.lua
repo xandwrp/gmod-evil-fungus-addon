@@ -75,9 +75,10 @@ end
 net.Receive("EvilFungusMat", function()
 	for _ = 1, net.ReadUInt(8) do
 		local nid = net.ReadUInt(24)
-		local pos, normal, felt = net.ReadVector(), net.ReadNormal(), net.ReadBool()
+		local pos, normal, folded = net.ReadVector(), net.ReadNormal(), net.ReadUInt(6)
+		local felt = folded > 0
 		if not M.nodes[nid] then
-			local node = { nid = nid, pos = pos, normal = normal, edges = {}, target = 0, shown = 0, felt = felt or nil }
+			local node = { nid = nid, pos = pos, normal = normal, edges = {}, target = 0, shown = 0, felt = felt or nil, folded = folded }
 			M.nodes[nid] = node
 			M.count = M.count + 1
 			if felt then

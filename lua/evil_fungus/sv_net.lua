@@ -115,7 +115,7 @@ local function Sync(ply, st)
 		net.WriteUInt(node.nid, 24)
 		net.WriteVector(node.pos)
 		net.WriteNormal(node.normal)
-		net.WriteBool(node.felt ~= nil)
+		net.WriteUInt(node.felt and math.Clamp(node.folded or 1, 1, 63) or 0, 6)
 	end
 	net.WriteUInt(#edges, 8)
 	for _, e in ipairs(edges) do

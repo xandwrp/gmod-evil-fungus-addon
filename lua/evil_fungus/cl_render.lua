@@ -44,6 +44,7 @@ local SHADE_LOW = 0.55
 local TEX_STRETCH = 1.4
 local WEB_POINTS = 14
 local WEB_HALF = 40
+local WEB_FULL = 10
 local WEB_LINKS = 2
 local WEB_REACH = 16
 local WEB_FACING = 0.5
@@ -275,9 +276,11 @@ local function Web(node)
 	local ang = n:Angle()
 	local right, up = ang:Right(), ang:Up()
 	local pts = {}
-	for i = 1, WEB_POINTS do
+	local folded = node.folded or WEB_POINTS
+	local half = Lerp(math.min(1, folded / WEB_FULL), WEB_HALF * 0.5, WEB_HALF)
+	for i = 1, math.Clamp(folded + 2, 3, WEB_POINTS) do
 		local u, v = Hash(node.nid * 31 + i) * 2 - 1, Hash(node.nid * 57 + i * 3) * 2 - 1
-		local start = node.pos + n * WEB_REACH + (right * u + up * v) * WEB_HALF
+		local start = node.pos + n * WEB_REACH + (right * u + up * v) * half
 		local tr = util.TraceLine({ start = start, endpos = start - n * WEB_REACH * 2.5, mask = MASK_SOLID_BRUSHONLY })
 		if tr.Hit and not tr.StartSolid and not tr.HitSky and tr.HitNormal:Dot(n) > WEB_FACING then
 			pts[#pts + 1] = { pos = tr.HitPos, normal = tr.HitNormal }
