@@ -27,6 +27,8 @@ local WIGGLE = 0.12
 local DRAW_RANGE = 6000
 local BUILD_MS = 1.5
 local MAX_CHUNK_EDGES = 1500
+local MAX_CHUNK_QUADS = 15000
+local SHAPES_PER_BUILD = 8
 local BODY_MS = 1.5
 local BODY_NODES = 500
 local BODY_CELL = 48
@@ -335,19 +337,26 @@ local function Build(chunk)
 		return
 	end
 
-	local list = {}
-	for e in pairs(chunk.edges) do
-		list[#list + 1] = e
-		if #list >= MAX_CHUNK_EDGES then break end
-	end
-
-	local patches, quads = {}, #list * SEGMENTS * ROOT_SIDES
+	local patches, quads, shaped = {}, 0, 0
 	for node in pairs(chunk.patches) do
-		local shape = Shape(node)
-		if shape.quads > 0 then
+		local shape = node.patch
+		if not shape and shaped < SHAPES_PER_BUILD then
+			shaped = shaped + 1
+			shape = Shape(node)
+		elseif not shape then
+			chunk.due = RealTime()
+		end
+		if shape and shape.quads > 0 and quads + shape.quads <= MAX_CHUNK_QUADS then
 			patches[#patches + 1] = shape
 			quads = quads + shape.quads
 		end
+	end
+
+	local list, tube = {}, SEGMENTS * ROOT_SIDES
+	for e in pairs(chunk.edges) do
+		if #list >= MAX_CHUNK_EDGES or quads + tube > MAX_CHUNK_QUADS then break end
+		list[#list + 1] = e
+		quads = quads + tube
 	end
 	if quads <= 0 then return end
 
@@ -665,7 +674,7 @@ EvilFungus.DrawPass("EvilFungusRender", function()
 	local r2 = r * r
 	render.SetMaterial(MAT)
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
-		if chunk.mesh and chunk.center:DistToSqr(eye) < r2 then chunk.mesh:Draw() end
+		if chunk.mesh and chunk.center:DistToSqr(eye) < (chunk.cull or r2) then chunk.mesh:Draw() end
 	end
 	t = EvilFungus.Measure("chunks", t)
 	DrawBody(eye)
