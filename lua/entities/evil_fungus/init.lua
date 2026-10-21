@@ -455,10 +455,6 @@ function ENT:Decide(now)
 
 	-- Only the body needs to know the way, so the search ends once it has reached every part of it.
 	local mat = self.Mat
-	if EvilFungus.Setting("hurtilizer") > 0 then
-		self.Dist = nil
-		return
-	end
 	local left, reached = 0, {}
 	for _ in pairs(mat.full) do left = left + 1 end
 	self.Dist = mat:Distances({ [goal] = 0 }, function(e)
