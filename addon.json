@@ -4,6 +4,7 @@
 	"tags": [ "fun", "scenic" ],
 	"ignore": [
 		"*.md",
+		"*.gma",
 		"*.blend",
 		"*.blend1",
 		".git*",
