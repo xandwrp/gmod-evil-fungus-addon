@@ -2,7 +2,7 @@ local Mat = EvilFungus.Mat
 
 local FOLD_INTERVAL = { 2, 0.25 }
 local FOLDS = { 12, 64 }
-local FOLD_MIN = 6
+local FOLD_MIN = 3
 local AGE = 30
 local GROW_MASS = 1
 local WAKE_RADIUS = 128
@@ -98,7 +98,7 @@ function ENT:Settling(now)
 	self.NextFold = now + Lerp(hurt, FOLD_INTERVAL[1], FOLD_INTERVAL[2])
 	local age, most = AGE * (1 - hurt), math.Round(Lerp(hurt, FOLDS[1], FOLDS[2]))
 	local mat = self.Mat
-	if EvilFungus.Setting("settle") <= 0 then
+	if EvilFungus.Setting("settle") <= 0 and hurt <= 0 then
 		if not next(mat.settled) then return end
 		local list = {}
 		for node in pairs(mat.settled) do
