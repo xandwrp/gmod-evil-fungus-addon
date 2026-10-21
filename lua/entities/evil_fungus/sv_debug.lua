@@ -3,6 +3,7 @@ local DRAW_RANGE = 2500
 local LIFT = 2
 local WAVE_BAND = 16
 local D_SHOWN = 6
+local DRAW_MAX = 3000
 
 local MASS = Color(240, 160, 40)
 local WAVE = Color(40, 220, 170)
@@ -34,8 +35,11 @@ function ENT:DebugDraw(now)
 		return false
 	end
 
+	local drawn = 0
 	for _, node in pairs(mat.nodes) do
+		if drawn >= DRAW_MAX then break end
 		if Seen(node.pos) then
+			drawn = drawn + #node.edges
 			for _, e in ipairs(node.edges) do
 				if e.a == node then
 					local k = math.Clamp((mat:Conductance(e, now) - floor) / (D_SHOWN - floor), 0, 1)
@@ -72,9 +76,9 @@ function ENT:DebugDraw(now)
 	local at, r = self.Center + self.Up * 24, self.CostReport
 	local air = 0
 	for _ in pairs(mat.air) do air = air + 1 end
-	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d  air %d  tunnel %.2f"):format(state, self.Body, mat.count, air, self.Tunnel or 0), life, TARGET)
-	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  feel %.2f"):format(
-		r.decide or 0, r.flow or 0, r.grow or 0, r.feel or 0), life, TARGET)
+	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d  settled %d  air %d  tunnel %.2f"):format(state, self.Body, mat.count, mat.settledCount or 0, air, self.Tunnel or 0), life, TARGET)
+	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  settle %.2f  feel %.2f"):format(
+		r.decide or 0, r.flow or 0, r.grow or 0, r.settle or 0, r.feel or 0), life, TARGET)
 	local mind = self.Mind
 	debugoverlay.EntityTextAtPosition(at, 2, ("mind %.2f  kept %.2f  wired %.2f"):format(mind:Level(), mind.kept, mind.wired), life, TARGET)
 	local knows = {}
