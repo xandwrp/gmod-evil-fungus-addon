@@ -48,27 +48,18 @@ local WEB_GRID = 2
 local WEB_REACH = 16
 local WEB_FACING = 0.5
 local WEB_LIFT = 0.5
-local WEB_SIZE = 512
 local WEB_VARIANTS = 4
-local WEB_POINTS = 26
-local WEB_RIM = 8
-local WEB_LINKS = 2
-local WEB_WIDTH = { 3, 8 }
-local WEB_SEGMENTS = 4
-local WEB_BOW = 0.15
 local WEB_INSET = 0.004
 local VEIN_SHOWN = 4
 local VIEW_SLACK = 16
 
-local WEB_RT = GetRenderTargetEx("evil_fungus_webs", WEB_SIZE * 2, WEB_SIZE * 2, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_BGRA8888)
 local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
-	["$basetexture"] = WEB_RT:GetName(),
+	["$basetexture"] = "evil_fungus/web",
 	["$vertexcolor"] = 1,
 	["$alphatest"] = 1,
-	["$alphatestreference"] = 0.4,
+	["$alphatestreference"] = 0.5,
 	["$nocull"] = 1,
 })
-WEB:SetTexture("$basetexture", WEB_RT)
 
 local COST_SMOOTH = 0.05
 local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
@@ -285,68 +276,6 @@ EvilFungus.Strands = {
 local function Radius(e)
 	return Lerp(e.level / LEVELS, R_THIN, R_THICK)
 end
-
-local function Strand(x0, y0, x1, y1, width, seed)
-	local dx, dy = x1 - x0, y1 - y0
-	local bow = (Hash(seed) - 0.5) * 2 * WEB_BOW
-	local px, py = x0, y0
-	for s = 1, WEB_SEGMENTS do
-		local k = s / WEB_SEGMENTS
-		local lift = 4 * k * (1 - k) * bow
-		local x, y = x0 + dx * k - dy * lift, y0 + dy * k + dx * lift
-		local sx, sy = x - px, y - py
-		local len = math.sqrt(sx * sx + sy * sy)
-		surface.DrawTexturedRectRotated((x + px) * 0.5, (y + py) * 0.5, len + width, width * Lerp(k, 1, 0.7), -math.deg(math.atan2(sy, sx)))
-		px, py = x, y
-	end
-end
-
-local function Bake()
-	render.PushRenderTarget(WEB_RT)
-	render.OverrideAlphaWriteEnable(true, true)
-	render.Clear(0, 0, 0, 0, true, true)
-	cam.Start2D()
-	draw.NoTexture()
-	for variant = 0, WEB_VARIANTS - 1 do
-		local ox, oy = (variant % 2) * WEB_SIZE, math.floor(variant / 2) * WEB_SIZE
-		local pts = {}
-		for i = 1, WEB_POINTS + WEB_RIM do
-			local seed = variant * 1000 + i
-			local r = i > WEB_POINTS and 0.49 or math.sqrt(Hash(seed)) * 0.42
-			local a = Hash(seed + 500) * math.pi * 2
-			pts[i] = { WEB_SIZE * (0.5 + math.cos(a) * r), WEB_SIZE * (0.5 + math.sin(a) * r) }
-		end
-		local seen = {}
-		for i = 1, #pts do
-			local near = {}
-			for j = 1, WEB_POINTS do
-				if j ~= i then near[#near + 1] = { j, (pts[i][1] - pts[j][1]) ^ 2 + (pts[i][2] - pts[j][2]) ^ 2 } end
-			end
-			table.sort(near, function(x, y) return x[2] < y[2] end)
-			for k = 1, math.min(i > WEB_POINTS and 1 or WEB_LINKS, #near) do
-				local j = near[k][1]
-				local key = math.min(i, j) * 256 + math.max(i, j)
-				if not seen[key] then
-					seen[key] = true
-					local seed = variant * 100000 + key
-					local shade = 200 + 55 * Hash(seed + 3)
-					surface.SetDrawColor(shade, shade, shade, 255)
-					Strand(ox + pts[i][1], oy + pts[i][2], ox + pts[j][1], oy + pts[j][2], Lerp(Hash(seed + 9), WEB_WIDTH[1], WEB_WIDTH[2]), seed)
-				end
-			end
-		end
-	end
-	cam.End2D()
-	render.OverrideAlphaWriteEnable(false)
-	render.PopRenderTarget()
-	WEB:SetTexture("$basetexture", WEB_RT)
-end
-
-hook.Add("PreRender", "EvilFungusWeb", function()
-	hook.Remove("PreRender", "EvilFungusWeb")
-	Bake()
-end)
-hook.Add("OnScreenSizeChanged", "EvilFungusWeb", Bake)
 
 local function Web(node)
 	local web = node.sheet
