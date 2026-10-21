@@ -68,6 +68,7 @@ local function Body(ent)
 	rag:SetPos(ent:GetPos())
 	rag:SetAngles(ent:GetAngles())
 	rag:SetSkin(ent:GetSkin())
+	rag:SetRenderMode(ent:GetRenderMode())
 	rag:SetColor(ent:GetColor())
 	rag:SetMaterial(ent:GetMaterial())
 	for _, group in ipairs(ent:GetBodyGroups()) do
@@ -76,6 +77,7 @@ local function Body(ent)
 	if ent:IsPlayer() then rag:SetNW2Vector(EvilFungus.COLOR_VAR, ent:GetPlayerColor()) end
 	rag:Spawn()
 	rag:Activate()
+	if ent:GetNoDraw() then rag:SetNoDraw(true) end
 	if ent:HasFlexManipulatior() then
 		rag:SetFlexScale(ent:GetFlexScale())
 		for i = 0, math.min(ent:GetFlexNum(), rag:GetFlexNum()) - 1 do rag:SetFlexWeight(i, ent:GetFlexWeight(i)) end
@@ -102,18 +104,58 @@ local function Parts(ent, list)
 	return list
 end
 
+local function Worn(npc)
+	local list, seen = Parts(npc), { [npc] = true }
+	for _, part in ipairs(list) do seen[part] = true end
+	local function Add(ent)
+		if not isentity(ent) or not IsValid(ent) or seen[ent] or ent:IsPlayer() or ent:IsNPC() then return end
+		if not ent:IsEffectActive(EF_BONEMERGE) or IsValid(ent:GetParent()) then return end
+		seen[ent] = true
+		list[#list + 1] = ent
+		for _, part in ipairs(Parts(ent)) do
+			if not seen[part] then
+				seen[part] = true
+				list[#list + 1] = part
+			end
+		end
+	end
+	for _, v in pairs(npc:GetTable()) do
+		if istable(v) then
+			for _, w in pairs(v) do Add(w) end
+		else
+			Add(v)
+		end
+	end
+	for _, ent in ipairs(ents.GetAll()) do
+		if ent:GetOwner() == npc then Add(ent) end
+	end
+	return list
+end
+
+local function Merged(part, npc)
+	while IsValid(part) and part ~= npc do
+		if part:IsWeapon() or not part:IsEffectActive(EF_BONEMERGE) then return false end
+		part = part:GetParent()
+	end
+	return true
+end
+
+local function Shade(ent, color)
+	ent:SetColor(Color(color.r, color.g, color.b, ent:GetColor().a))
+end
+
 local function Tint(rag, color)
-	rag:SetColor(color)
+	Shade(rag, color)
 	for _, part in ipairs(rag.EvilFungusParts or {}) do
-		if IsValid(part) then part:SetColor(color) end
+		if IsValid(part) then Shade(part, color) end
 	end
 end
 
-local function Dress(rag, npc)
+local function Dress(rag, npc, worn)
 	rag.EvilFungusParts = {}
-	for _, part in ipairs(npc:GetChildren()) do
+	for _, part in ipairs(worn) do
 		local model = IsValid(part) and part:GetModel()
-		if model and part:IsEffectActive(EF_BONEMERGE) and not part:IsWeapon() and not part:GetNoDraw() and util.IsValidModel(model) then
+		if model and Merged(part, npc) and not part:GetNoDraw() and util.IsValidModel(model) then
 			local copy = ents.Create("prop_dynamic")
 			if IsValid(copy) then
 				copy:SetModel(model)
@@ -137,12 +179,13 @@ local function Dress(rag, npc)
 	end
 end
 
-local function Hide(npc)
+local function Hide(npc, worn)
 	npc.EvilFungusHadNoTarget = npc:IsFlagSet(FL_NOTARGET)
+	npc.EvilFungusHadNoDraw = npc:GetNoDraw()
 	npc.EvilFungusMoveType = npc:GetMoveType()
 	npc.EvilFungusParts = {}
-	for _, part in ipairs(Parts(npc)) do
-		if not part:GetNoDraw() then
+	for _, part in ipairs(worn) do
+		if IsValid(part) and not part:GetNoDraw() then
 			part:SetNoDraw(true)
 			npc.EvilFungusParts[#npc.EvilFungusParts + 1] = part
 		end
@@ -163,7 +206,7 @@ local function Show(npc, spot)
 	npc:RemoveEFlags(EFL_NO_THINK_FUNCTION)
 	npc:SetMoveType(npc.EvilFungusMoveType or MOVETYPE_STEP)
 	npc:SetNotSolid(false)
-	npc:SetNoDraw(false)
+	npc:SetNoDraw(npc.EvilFungusHadNoDraw or false)
 	npc:DrawShadow(true)
 	for _, part in ipairs(npc.EvilFungusParts or {}) do
 		if IsValid(part) then part:SetNoDraw(false) end
@@ -420,8 +463,9 @@ function Sleep.Under(ent, fungus)
 		ent:Remove()
 		return
 	end
-	Dress(rag, ent)
-	Hide(ent)
+	local worn = Worn(ent)
+	Dress(rag, ent, worn)
+	Hide(ent, worn)
 	ent.EvilFungusAsleep = rag
 	Sleep.Hold(rag, ent, fungus, {})
 	return rag
