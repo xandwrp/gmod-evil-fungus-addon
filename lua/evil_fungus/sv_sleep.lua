@@ -1,5 +1,6 @@
 EvilFungus = EvilFungus or {}
 local Sleep = EvilFungus.Sleep or { drowsy = {}, sleepers = {} }
+Sleep.dreamers = Sleep.dreamers or {}
 EvilFungus.Sleep = Sleep
 EvilFungus.Sleepers = Sleep.sleepers
 
@@ -34,6 +35,11 @@ local STANDING_OFFSETS = { Vector(0, 0, 0), Vector(32, 0, 0), Vector(-32, 0, 0),
 local function Drowsy(ent, d)
 	ent.EvilFungusDrowsy = d
 	if ent:IsPlayer() then ent:SetNW2Float(EvilFungus.DROWSY_VAR, d) end
+end
+
+local function Wakeful(ply)
+	Sleep.dreamers[ply] = nil
+	ply:SetNW2Bool(EvilFungus.ASLEEP_VAR, false)
 end
 
 local function Kilos(ent)
@@ -345,7 +351,7 @@ local function Wake(s)
 		owner:UnSpectate()
 		owner:Spawn()
 		owner.EvilFungusWaking = nil
-		owner:SetNW2Bool(EvilFungus.ASLEEP_VAR, false)
+		Wakeful(owner)
 		owner:SetPos(spot)
 		owner:SetHealth(s.health or owner:GetMaxHealth())
 		owner:SetArmor(kit.armor or 0)
@@ -448,10 +454,11 @@ function Sleep.Under(ent, fungus)
 		ent:KillSilent()
 		ent:AddDeaths(1)
 		hook.Run("PlayerDeath", ent, fungus, fungus)
-		ent:SetNW2Bool(EvilFungus.ASLEEP_VAR, true)
 		if not rag then return end
+		ent:SetNW2Bool(EvilFungus.ASLEEP_VAR, true)
 		ent:Spectate(OBS_MODE_CHASE)
 		ent:SpectateEntity(rag)
+		Sleep.dreamers[ent] = rag
 		ent.EvilFungusHeld = s
 		Sleep.Hold(rag, ent, fungus, s)
 		return rag
@@ -603,19 +610,30 @@ hook.Add("Think", "EvilFungusSleep", function()
 				Surrender(s, rag.EvilCrawlerVictim)
 			else
 				local owner = s.owner
-				if IsValid(owner) then
-					if not owner:IsPlayer() then
-						owner:SetPos(rag:GetPos())
-					elseif owner.EvilFungusHeld == s and owner:GetObserverTarget() ~= rag then
-						owner:SpectateEntity(rag)
-					end
-				end
+				if IsValid(owner) and not owner:IsPlayer() then owner:SetPos(rag:GetPos()) end
 				if s.stage == LOOSE or s.stage == CONSUMING then Check(s, now) end
 				if s.stage == CONSUMING then s.held = s.held + UPDATE * scale end
 				if s.stage == CONSUMING and s.held >= rescue then
 					Keep(s)
 				elseif s.stage == FREED and now - s.stageAt >= WAKE_AFTER then
 					Wake(s)
+				end
+			end
+		end
+
+		for ply, rag in pairs(Sleep.dreamers) do
+			local s = IsValid(ply) and IsValid(rag) and Sleep.sleepers[rag]
+			if not IsValid(ply) then
+				Sleep.dreamers[ply] = nil
+			elseif ply:Alive() or not s or s.done and ply.EvilFungusHeld ~= s then
+				Wakeful(ply)
+			else
+				local target = ply:GetObserverTarget()
+				if ply:GetObserverMode() ~= OBS_MODE_CHASE or IsValid(target) and target ~= rag then
+					Wakeful(ply)
+					if ply.EvilFungusHeld == s then Gone(s) end
+				elseif not IsValid(target) and ply.EvilFungusHeld == s then
+					ply:SpectateEntity(rag)
 				end
 			end
 		end
@@ -699,7 +717,7 @@ hook.Add("PlayerSpawn", "EvilFungusSleep", function(ply)
 	local s = ply.EvilFungusHeld
 	if s then s.owner = nil end
 	ply.EvilFungusHeld = nil
-	ply:SetNW2Bool(EvilFungus.ASLEEP_VAR, false)
+	Wakeful(ply)
 	Drowsy(ply, 0)
 	Sleep.drowsy[ply] = nil
 end)
