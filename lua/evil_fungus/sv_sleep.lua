@@ -569,7 +569,7 @@ end
 local function Digest(s, now)
 	s.progress = math.min(1, s.progress + CONSUME_UPDATE * EvilFungus.TimeScale() / math.max(1, EvilFungus.Setting("consume_time")))
 	local k = s.progress
-	local min = EvilFungus.MIN_SCALE
+	local min = EvilFungus.Setting("shrink") > 0 and EvilFungus.MIN_SCALE or 1
 	for _, b in ipairs(s.schedule) do
 		if b.scale > 0 and s.rag:GetManipulateBoneScale(b.bone).x == 0 then b.scale = 0 end
 		local scale = Lerp(math.Clamp((k - b.start) / SHRINK_SPAN, 0, 1), 1, min)

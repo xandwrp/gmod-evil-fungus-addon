@@ -75,10 +75,35 @@ function EvilFungus.Measure(name, since)
 	return t
 end
 
-local ROOT = { 175, 165, 150 }
-local VEIN = { 200, 175, 140 }
-local BODY_THIN = { 200, 185, 180 }
-local BODY_THICK = { 140, 95, 105 }
+local ROOT, VEIN, BODY_THIN, BODY_THICK = {}, {}, {}, {}
+local PALETTE = {
+	{ ROOT, 175, 165, 150 }, { VEIN, 200, 175, 140 }, { BODY_THIN, 200, 185, 180 }, { BODY_THICK, 140, 95, 105 },
+}
+local tinted
+
+local function Tint()
+	local r, g, b = EvilFungus.Settings:Color("color")
+	local v = r * 65536 + g * 256 + b
+	if v == tinted then return false end
+	tinted = v
+	for _, p in ipairs(PALETTE) do
+		p[1][1], p[1][2], p[1][3] = p[2] * r / 255, p[3] * g / 255, p[4] * b / 255
+	end
+	return true
+end
+Tint()
+
+timer.Create("EvilFungusTint", 1, 0, function()
+	if not Tint() or not EvilFungus.Client then return end
+	for _, node in pairs(EvilFungus.Client.nodes or {}) do node.sheet = nil end
+	for _, chunk in pairs(EvilFungus.Client.chunks or {}) do EvilFungus.Client.Stale(chunk, 0) end
+	for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
+		if rag.EvilFungusMesh then
+			rag.EvilFungusMesh:Destroy()
+			rag.EvilFungusMesh = nil
+		end
+	end
+end)
 
 local function Hash(i)
 	local x = math.sin(i * 12.9898) * 43758.5453
@@ -512,7 +537,7 @@ local function BakeBody(cell)
 
 	-- A strand whose bow would be lost inside its own thickness is drawn straight.
 	local sides, most = cell.lod[2], cell.lod[3]
-	local t = RealTime() * PULSE_RATE
+	local t = RealTime() * PULSE_RATE * EvilFungus.Setting("pulse_speed")
 	local quads = 0
 	for i = 1, n do
 		local e = list[i]
