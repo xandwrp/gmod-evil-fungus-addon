@@ -1,4 +1,4 @@
-local CONSUMING, KEPT = EvilFungus.CONSUMING, EvilFungus.KEPT
+local CONSUMING, KEPT, HOST, SPENT = EvilFungus.CONSUMING, EvilFungus.KEPT, EvilFungus.HOST, EvilFungus.SPENT
 
 local SCAN = 0.5
 local RANGE = 4000
@@ -42,6 +42,19 @@ local WIRE_SIDES = 4
 local WIRE_R = { 0.45, 0.8 }
 local WIRE_SPAN = { 8, 16 }
 local WIRE_ARCH = 0.6
+
+local TENDRILS = 8
+local TENDRIL_SAMPLES = 4
+local TENDRIL_SIDES = 4
+local TENDRIL_LENGTH = { 10, 28 }
+local TENDRIL_R = { 0.7, 0.15 }
+local TENDRIL_SWAY = 4
+
+local TETHER_SAMPLES = 8
+local TETHER_SIDES = 6
+local TETHER_R = { 3, 1.6 }
+local TETHER_SAG = 0.15
+local LIGHT_EVERY = 0.5
 
 local LIMB_SIDES = 6
 -- Rounded ends, as how far past the joint and how wide, so a part's ends close over and the joints run together.
@@ -271,6 +284,52 @@ local function Limbs(shapes, rag, c, up, light, S)
 	end
 end
 
+local function Tendrils(shapes, rag, c, now, light, S)
+	local limbs = c.limbs
+	if #limbs == 0 then return end
+	local seed = rag:EntIndex()
+	for i = 1, TENDRILS do
+		local limb = limbs[1 + math.floor(Rand(seed, i, 21) * #limbs)]
+		local a, b = rag:GetBonePosition(limb.parent), rag:GetBonePosition(limb.bone)
+		if a and b then
+			local root = Lerp(Rand(seed, i, 22), a, b)
+			local len = Lerp(Rand(seed, i, 23), TENDRIL_LENGTH[1], TENDRIL_LENGTH[2])
+			local phase = Rand(seed, i, 24) * math.pi * 2
+			local pts, radii = {}, {}
+			for j = 0, TENDRIL_SAMPLES do
+				local t = j / TENDRIL_SAMPLES
+				local sway = TENDRIL_SWAY * t * t
+				pts[j + 1] = root + Vector(math.sin(now * 2.3 + phase + t * 2) * sway, math.cos(now * 1.9 + phase + t * 2) * sway, -len * t)
+				radii[j + 1] = Lerp(t, TENDRIL_R[1], TENDRIL_R[2])
+			end
+			local r, g, bl = Mix(S.ROOT, S.VEIN, Rand(seed, i, 25) * 0.5)
+			Shape(shapes, pts, radii, vector_up, TENDRIL_SIDES, r, g, bl, light)
+		end
+	end
+end
+
+local function Tether(shapes, rag, anchor, light, S)
+	local to = rag:WorldSpaceCenter()
+	local mid = (anchor + to) * 0.5 - vector_up * (anchor:Distance(to) * TETHER_SAG)
+	local pts, radii = {}, {}
+	for i = 0, TETHER_SAMPLES do
+		local t = i / TETHER_SAMPLES
+		pts[i + 1] = Bezier(anchor, mid, to, t)
+		radii[i + 1] = Lerp(t, TETHER_R[1], TETHER_R[2])
+	end
+	local r, g, b = Mix(S.BODY_THIN, S.BODY_THICK, 0.5)
+	Shape(shapes, pts, radii, vector_up, TETHER_SIDES, r, g, b, light)
+end
+
+local function Lit(rag, clock, S)
+	local lit = rag.EvilFungusLit
+	if not lit or clock - lit.at > LIGHT_EVERY then
+		lit = { at = clock, light = S.Light({ pos = rag:WorldSpaceCenter(), normal = vector_up }) }
+		rag.EvilFungusLit = lit
+	end
+	return lit.light
+end
+
 local function Quads(sh)
 	return (#sh.pts - 1) * sh.sides
 end
@@ -362,12 +421,22 @@ EvilFungus.DrawPass("EvilFungusSleepers", function()
 	local shapes = {}
 	for _, rag in ipairs(sleepers) do
 		local d2 = IsValid(rag) and rag:GetPos():DistToSqr(eye)
-		if d2 and d2 < RANGE * RANGE then
+		local stage = d2 and rag:GetNW2Int(EvilFungus.STAGE_VAR, 0)
+		if d2 and d2 < RANGE * RANGE and (stage == HOST or stage == SPENT) then
+			local c = Cache(rag)
+			rag:SetupBones()
+			local light = Lit(rag, clock, S)
+			Limbs(shapes, rag, c, vector_up, light, S)
+			if stage == HOST then
+				Tendrils(shapes, rag, c, now, light, S)
+				local anchor = rag:GetNW2Vector(EvilFungus.ANCHOR_VAR)
+				if not anchor:IsZero() then Tether(shapes, rag, anchor, light, S) end
+			end
+		elseif d2 and d2 < RANGE * RANGE then
 			local nest, up, light = Frame(rag, S)
 			if nest then
 				local c = Cache(rag)
 				rag:SetupBones()
-				local stage = rag:GetNW2Int(EvilFungus.STAGE_VAR, 0)
 				local t = clock - rag:GetNW2Float(EvilFungus.SINCE_VAR, clock)
 				local close = d2 < FIBER_RANGE * FIBER_RANGE
 
