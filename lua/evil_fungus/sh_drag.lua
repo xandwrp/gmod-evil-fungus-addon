@@ -12,8 +12,10 @@ EvilFungus.CONSUMED_VAR = "EvilFungusConsumed"
 EvilFungus.SINCE_VAR = "EvilFungusSince"
 EvilFungus.WHOLE_VAR = "EvilFungusWhole"
 EvilFungus.NODES_VAR = "EvilFungusNodes"
+EvilFungus.ANCHOR_VAR = "EvilFungusAnchor"
 
 EvilFungus.LOOSE, EvilFungus.CONSUMING, EvilFungus.KEPT, EvilFungus.FREED = 1, 2, 3, 4
+EvilFungus.HOST, EvilFungus.SPENT = 5, 6
 EvilFungus.MIN_SCALE = 0.2
 
 -- The bone it leaves alone, and everything hanging off it.

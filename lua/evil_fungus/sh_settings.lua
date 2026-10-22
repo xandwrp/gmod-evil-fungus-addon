@@ -15,6 +15,10 @@ EvilFungus.SETTINGS = {
 		help = "Seconds into being consumed that a sleeper can still be pulled off the mat" },
 	{ name = "give_up", default = 1, min = 0, max = 1, label = "Sleepers can give up",
 		help = "Players who've gone under can press jump to respawn straight away instead of waiting out their rescue window" },
+	{ name = "hosts", default = 0, min = 0, max = 1, decimals = 2, label = "Infected hosts",
+		help = "Share of the bodies it keeps that get back up for it. Husks go after anyone nearby, put them under and drag them back to the mat, shedding spores as they walk. When their time's up they climb somewhere high and burst into a new patch. At 0 nobody gets up" },
+	{ name = "host_time", default = 90, min = 10, max = 600, decimals = 0, label = "Host time",
+		help = "Seconds a husk walks around before it goes off to burst" },
 	{ name = "killable", default = 1, min = 0, max = 1, label = "Can be killed",
 		help = "Fire spreads through it and burns it away, explosions blow holes in it and bullets cut its strands. At 0 nothing hurts it" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
@@ -59,7 +63,7 @@ EvilFungus.SETTINGS = {
 EvilFungus.PRESETS = {
 	{ name = "normal", label = "Normal", values = {} },
 	{ name = "unhinged", label = "Unhinged", values = {
-		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15,
+		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15, hosts = 0.5, host_time = 60,
 		aggression = 20, learning = 4, smell = 3000, vibration = 2000, scavenge = 5000, grow_cost = 0.25, sprawl = 2.5, spores = 8, carried = 4,
 		max_nodes = 6000, start_mass = 150, grow_speed = 3, flow_speed = 3,
 	} },

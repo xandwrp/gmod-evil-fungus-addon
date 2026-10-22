@@ -318,6 +318,20 @@ local function Keep(s)
 	Gone(s)
 end
 
+function Sleep.Raise(s)
+	local rag = s.rag
+	Sleep.sleepers[rag] = nil
+	if IsValid(s.fungus) then s.fungus:Unclaim(rag) end
+	rag:SetNW2Int(KEPT_VAR, 0)
+	for i = 0, rag:GetPhysicsObjectCount() - 1 do
+		local phys = rag:GetPhysicsObjectNum(i)
+		if IsValid(phys) then
+			phys:EnableMotion(true)
+			phys:Wake()
+		end
+	end
+end
+
 function Sleep.Free(s)
 	if s.stage >= KEPT then return end
 	SetStage(s, FREED)
@@ -431,8 +445,7 @@ function EvilFungus.Sedate(ent, amount, fungus)
 	Sleep.drowsy[ent] = true
 	Drowsy(ent, math.min(1, (ent.EvilFungusDrowsy or 0) + amount))
 	if ent.EvilFungusDrowsy < 1 then return false end
-	Sleep.Under(ent, fungus)
-	return true
+	return true, Sleep.Under(ent, fungus)
 end
 
 -- As far as the game is concerned a player just died. The body stays, and it's the fungus's now.
@@ -502,6 +515,7 @@ local function Check(s, now)
 	local node, colony = Contact(s.rag)
 	if not node then
 		if s.stage == CONSUMING then SetStage(s, LOOSE) end
+		if IsValid(s.hauler) then return end
 		if now - s.stageAt >= LET_GO then
 			if Tugged(s, now) and not s.corpse then Rescued(s) else Sleep.Free(s) end
 		end
@@ -573,6 +587,14 @@ local function Digest(s, now)
 		fungus.Mat:SetMass(nest, nest.m + due - s.fed)
 	end
 	s.fed = due
+	local hosts = EvilFungus.Hosts
+	if hosts and s.stage == KEPT then
+		if s.rise == nil and EvilFungus.Setting("hosts") > 0 then s.rise = hosts.Roll(s) end
+		if s.rise and k >= s.rise then
+			hosts.Rise(s)
+			return
+		end
+	end
 	if k >= 1 then
 		s.done = true
 		if IsValid(fungus) then

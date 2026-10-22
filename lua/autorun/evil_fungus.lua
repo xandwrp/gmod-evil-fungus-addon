@@ -77,6 +77,7 @@ else
 	include("evil_fungus/sv_scent.lua")
 	include("evil_fungus/sv_net.lua")
 	include("evil_fungus/sv_sleep.lua")
+	include("evil_fungus/sv_hosts.lua")
 	include("evil_fungus/sv_carriers.lua")
 	include("evil_fungus/sv_harm.lua")
 end
