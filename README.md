@@ -24,6 +24,7 @@ Entities > Syhgma's Evil Entities > Evil Fungus. Point it at the world, not a pr
 - Gets smarter with every head it keeps, and learns the ways people get away
 - Goes looking for bodies lying around
 - Throws spores to start new patches
+- Can raise some of the bodies it keeps as husks that drag people back to it, then burst into new patches somewhere high (off by default)
 - Burns, gets blown apart by explosions and cut by bullets, and is scared of fire
 - Eats VJ Base and ZBase NPCs too
 
