@@ -80,4 +80,5 @@ else
 	include("evil_fungus/sv_hosts.lua")
 	include("evil_fungus/sv_carriers.lua")
 	include("evil_fungus/sv_harm.lua")
+	include("evil_fungus/sv_enemy.lua")
 end

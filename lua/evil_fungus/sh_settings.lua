@@ -5,6 +5,8 @@ EvilFungus.SETTINGS = {
 		help = "Players standing on the mat are food. At 0 it leaves players alone entirely" },
 	{ name = "attack_npcs", default = 1, min = 0, max = 1, label = "Eats NPCs",
 		help = "People and animals standing on the mat are food. Anything that doesn't bleed never is" },
+	{ name = "npcs_fight", default = 1, min = 0, max = 1, label = "NPCs fight back",
+		help = "NPCs that can see the mat shoot at the strands nearest them" },
 	{ name = "sleep_time", default = 4, min = 0.5, max = 30, decimals = 1, label = "Sleep time",
 		help = "Seconds with its body on you before you go under" },
 	{ name = "grip", default = 0.85, min = 0, max = 1, decimals = 2, label = "Grip",
