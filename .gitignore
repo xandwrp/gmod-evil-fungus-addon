@@ -1,5 +1,6 @@
 *.md
 !README.md
+*.gma
 *.blend1
 renders/
 __pycache__/
