@@ -657,6 +657,7 @@ local function Held(ent)
 end
 
 hook.Add("PhysgunPickup", "EvilFungusSleep", function(_, ent) if Locked(ent) then return false end end)
+hook.Add("CanPlayerUnfreeze", "EvilFungusSleep", function(_, ent) if Locked(ent) then return false end end)
 hook.Add("GravGunPickupAllowed", "EvilFungusSleep", function(_, ent) if Locked(ent) then return false end end)
 hook.Add("CanTool", "EvilFungusSleep", function(_, tr) if IsValid(tr.Entity) and Held(tr.Entity) then return false end end)
 hook.Add("CanProperty", "EvilFungusSleep", function(_, _, ent) if Held(ent) then return false end end)
