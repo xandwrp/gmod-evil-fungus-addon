@@ -78,6 +78,10 @@ end
 net.Receive("EvilFungusReady", function(_, ply)
 	local now, st = RealTime(), Net.players[ply]
 	if st and now - (st.asked or 0) < RESYNC_GAP then return end
+	if st and (st.node < Net.nextNode - 1 - SCAN_PER_TICK or st.edge < Net.nextEdge - 1 - SCAN_PER_TICK) then
+		st.asked = now
+		return
+	end
 	Net.players[ply] = { node = 0, edge = 0, asked = now }
 end)
 
