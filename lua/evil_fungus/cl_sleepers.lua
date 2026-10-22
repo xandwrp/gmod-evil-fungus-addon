@@ -4,7 +4,7 @@ local SCAN = 0.5
 local RANGE = 4000
 local FIBER_RANGE = 1800
 local BATCH = 2500
-local STATIC_QUADS = 15000
+local STATIC_QUADS = 8000
 local REBUILD = 2
 
 local VEIN_SAMPLES = 6
