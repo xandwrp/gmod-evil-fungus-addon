@@ -52,6 +52,7 @@ local WEB_VARIANTS = 4
 local WEB_INSET = 0.004
 local VEIN_SHOWN = 4
 local VIEW_SLACK = 16
+local STALE_FRAMES = 2
 
 local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
 	["$basetexture"] = "evil_fungus/web",
@@ -691,8 +692,9 @@ local rebuilt, eye = -1, Vector()
 EvilFungus.DrawPass("EvilFungusRender", function()
 	local t = SysTime()
 	local frame = FrameNumber()
-	if rebuilt ~= frame then
-		rebuilt, eye = frame, EyePos()
+	local fresh = view.frame == frame and view.origin
+	if rebuilt ~= frame and (fresh or not render.GetRenderTarget() or frame - rebuilt > STALE_FRAMES) then
+		rebuilt, eye = frame, fresh and Vector(fresh) or EyePos()
 		Show()
 		Rebuild()
 		t = EvilFungus.Measure("rebuild", t)
