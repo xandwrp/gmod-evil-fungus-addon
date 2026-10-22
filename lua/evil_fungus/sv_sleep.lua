@@ -539,6 +539,7 @@ function Sleep.Hold(rag, owner, fungus, s)
 	s.brain = EvilFungus.Brain(owner)
 	s.profile = owner:IsPlayer() and EvilFungus.Souls:Profile(owner) or nil
 	s.since = CurTime()
+	if math.random() < EvilFungus.Setting("break_free") then s.breakAt = math.Rand(0.2, 0.9) * EvilFungus.Setting("rescue_time") end
 	rag:SetNW2Float(EvilFungus.SINCE_VAR, s.since)
 	rag:SetNW2Int(KEPT_VAR, bit.lshift(1, HEAD_PART - 1))
 	Sleep.sleepers[rag] = s
@@ -635,7 +636,10 @@ hook.Add("Think", "EvilFungusSleep", function()
 				if IsValid(owner) and not owner:IsPlayer() then owner:SetPos(rag:GetPos()) end
 				if s.stage == LOOSE or s.stage == CONSUMING then Check(s, now) end
 				if s.stage == CONSUMING then s.held = s.held + UPDATE * scale end
-				if s.stage == CONSUMING and s.held >= rescue then
+				if s.stage == CONSUMING and s.breakAt and s.held >= s.breakAt and IsValid(owner) then
+					s.breakAt = nil
+					Wake(s)
+				elseif s.stage == CONSUMING and s.held >= rescue then
 					Keep(s)
 				elseif s.stage == FREED and now - s.stageAt >= WAKE_AFTER then
 					Wake(s)

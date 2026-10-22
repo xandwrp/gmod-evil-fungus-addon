@@ -21,6 +21,11 @@ local IGNITE_SOUND = "ambient/fire/ignite.wav"
 local FLAME_PAD = 16
 local FLAME_MAX = 128
 local SOURCES = { env_fire = 48, env_flare = 16 }
+local KINDS = { "*fire*", "*flame*", "*flare*", "*napalm*" }
+local NOT_FIRE = { entityflame = true, env_firesensor = true, env_firesource = true, env_lensflare = true }
+local BOLT_CUT = 32
+local BOLT_HEAT = 56
+local BOLT_ARM = 0.05
 local BODY_REACH = 24
 local FEAR_PAD = 96
 local RETREAT_MAX = 12
@@ -146,6 +151,13 @@ local function Retreat()
 	end
 end
 
+local function Burning(ent)
+	local class = ent:GetClass()
+	if NOT_FIRE[class] or string.StartWith(class, "evil_") then return false end
+	if ent:IsWeapon() or ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() then return false end
+	return ent:GetInternalVariable("m_bEnabled") ~= false
+end
+
 local function Scan(now)
 	Cool()
 	if not next(EvilFungus.Colonies or {}) then return end
@@ -159,9 +171,13 @@ local function Scan(now)
 			fires[#fires + 1] = { flame:GetPos(), FLAME_PAD * 2 }
 		end
 	end
-	for class, radius in pairs(SOURCES) do
-		for _, fire in ipairs(ents.FindByClass(class)) do
-			if fire:GetInternalVariable("m_bEnabled") ~= false then fires[#fires + 1] = { fire:GetPos(), radius } end
+	local seen = {}
+	for _, kind in ipairs(KINDS) do
+		for _, fire in ipairs(ents.FindByClass(kind)) do
+			if not seen[fire] and Burning(fire) then
+				seen[fire] = true
+				fires[#fires + 1] = { fire:GetPos(), SOURCES[fire:GetClass()] or math.Clamp(fire:BoundingRadius() + FLAME_PAD, FLAME_PAD, FLAME_MAX) }
+			end
 		end
 	end
 	for _, f in ipairs(fires) do
@@ -291,4 +307,29 @@ hook.Add("EntityTakeDamage", "EvilFungusHarm", function(_, dmg)
 	local pos = dmg:GetDamagePosition()
 	if pos:IsZero() then return end
 	Harm.Blast(pos, BLAST_MAGNITUDE * 2.5)
+end)
+
+local bolts = {}
+
+function Harm.Bolt(pos)
+	if not On() or not next(EvilFungus.Colonies or {}) then return end
+	Harm.Cut(pos, BOLT_CUT)
+	Catch(pos, BOLT_HEAT, CurTime())
+end
+
+hook.Add("OnEntityCreated", "EvilFungusBolt", function(ent)
+	if ent:GetClass() == "crossbow_bolt" then bolts[ent] = CurTime() end
+end)
+
+hook.Add("Think", "EvilFungusBolt", function()
+	if not next(bolts) then return end
+	local now = CurTime()
+	for bolt, at in pairs(bolts) do
+		if not IsValid(bolt) then
+			bolts[bolt] = nil
+		elseif now - at > BOLT_ARM and (bolt:GetMoveType() == MOVETYPE_NONE or bolt:GetVelocity():LengthSqr() < 100) then
+			bolts[bolt] = nil
+			Harm.Bolt(bolt:GetPos())
+		end
+	end
 end)

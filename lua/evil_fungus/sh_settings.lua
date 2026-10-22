@@ -15,6 +15,8 @@ EvilFungus.SETTINGS = {
 		help = "Seconds it takes to replace a sleeper with itself, everything but the head" },
 	{ name = "rescue_time", default = 60, min = 0, max = 600, decimals = 0, label = "Rescue window",
 		help = "Seconds into being consumed that a sleeper can still be pulled off the mat" },
+	{ name = "break_free", default = 0, min = 0, max = 1, decimals = 2, label = "Breaking free",
+		help = "Chance someone it's put under wakes up on their own partway through their rescue window" },
 	{ name = "give_up", default = 1, min = 0, max = 1, label = "Sleepers can give up",
 		help = "Players who've gone under can press jump to respawn straight away instead of waiting out their rescue window" },
 	{ name = "hosts", default = 0, min = 0, max = 1, decimals = 2, label = "Infected hosts",
