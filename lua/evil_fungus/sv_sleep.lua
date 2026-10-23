@@ -569,7 +569,7 @@ function Sleep.Wrap(rag, fungus)
 	Check(s, s.since)
 end
 
-local function Digest(s, now)
+local function Wither(s)
 	s.progress = math.min(1, s.progress + CONSUME_UPDATE * EvilFungus.TimeScale() / math.max(1, EvilFungus.Setting("consume_time")))
 	local k = s.progress
 	local min = EvilFungus.Setting("shrink") > 0 and EvilFungus.MIN_SCALE or 1
@@ -590,6 +590,11 @@ local function Digest(s, now)
 		fungus.Mat:SetMass(nest, nest.m + due - s.fed)
 	end
 	s.fed = due
+	return k
+end
+
+local function Digest(s, now)
+	local k = Wither(s)
 	local hosts = EvilFungus.Hosts
 	if hosts and s.stage == KEPT then
 		if s.rise == nil and EvilFungus.Setting("hosts") > 0 then s.rise = hosts.Roll(s) end
@@ -625,7 +630,11 @@ function EvilFungus.Unwire(rag)
 	if not w then return end
 	Sleep.wired[rag] = nil
 	if IsValid(w.fungus) then w.fungus:Unclaim(rag) end
-	if IsValid(rag) then rag:SetNW2Int(EvilFungus.STAGE_VAR, 0) end
+	if not IsValid(rag) then return end
+	rag:SetNW2Int(EvilFungus.STAGE_VAR, 0)
+	for _, b in ipairs(w.schedule) do
+		if b.scale > 0 then rag:ManipulateBoneScale(b.bone, Vector(1, 1, 1)) end
+	end
 end
 
 local function Rewire(rag, w)
@@ -643,13 +652,13 @@ local function Rewire(rag, w)
 	end
 end
 
--- Something else's catch, held still close enough under it to wire the head in. Kept, but never eaten.
 function EvilFungus.Wire(rag, at)
 	if Sleep.wired[rag] then return true end
 	if Sleep.sleepers[rag] then return false end
 	local node, colony = Nest(at)
 	if not node then return false end
-	local w = { at = at }
+	local w = { rag = rag, at = at, schedule = Schedule(rag), progress = 0, fed = 0,
+		food = math.Clamp(Kilos(rag) * FOOD_PER_KG, FOOD_VALUE[1], FOOD_VALUE[2]) }
 	Sleep.wired[rag] = w
 	rag:SetNW2Float(EvilFungus.SINCE_VAR, CurTime())
 	rag:SetNW2Float(EvilFungus.CONSUMED_VAR, 0)
@@ -736,6 +745,9 @@ hook.Add("Think", "EvilFungusSleep", function()
 		nextConsume = now + CONSUME_UPDATE
 		for rag, s in pairs(Sleep.sleepers) do
 			if IsValid(rag) and (s.stage == CONSUMING or s.stage == KEPT) and not s.done then Digest(s, now) end
+		end
+		for rag, w in pairs(Sleep.wired) do
+			if IsValid(rag) and w.nest and w.progress < 1 then Wither(w) end
 		end
 	end
 end)
