@@ -57,7 +57,7 @@ local ai_ignoreplayers = GetConVar("ai_ignoreplayers")
 local Creature = EvilFungus.Creature
 
 function ENT:InitFeel()
-	self.Touching, self.Pending, self.Waves, self.Dragged = {}, {}, {}, {}
+	self.Touching, self.Pending, self.Waves, self.Dragged, self.Threads = {}, {}, {}, {}, {}
 	self.NextFeel, self.FeltAt = 0, -math.huge
 	self.NextSmell, self.Smelled = 0, nil
 	self.NextShake = 0
@@ -271,7 +271,7 @@ function ENT:Smell(now)
 	self.NextSmell = now + SMELL_INTERVAL
 	self.Smelled = nil
 	local prey = self.Prey
-	if IsValid(prey) and (self.Eating or self:Touches(prey)) then return end
+	local busy = IsValid(prey) and (self.Eating or self:Touches(prey))
 
 	local mins, maxs = self.Mat.mins, self.Mat.maxs
 	local best, bestNode, bestScore
@@ -289,6 +289,7 @@ function ENT:Smell(now)
 		local d = node.pos:Distance(breath)
 		if d > reach then return end
 		if util.TraceLine({ start = breath, endpos = node.pos + node.normal * 4, mask = MASK_SOLID_BRUSHONLY }).Hit then return end
+		self.Threads[ent] = { node = node, at = now, smelled = true }
 		local score = d / reach * (ent == prey and SMELL_KEEP or 1)
 		if not bestScore or score < bestScore then best, bestNode, bestScore = ent, node, score end
 	end
@@ -296,7 +297,7 @@ function ENT:Smell(now)
 	for ent in pairs(EvilFungus.Creatures) do
 		if IsValid(ent) then Sniff(ent) end
 	end
-	if not best then return end
+	if busy or not best then return end
 
 	if best ~= prey then self.NextDecide = 0 end
 	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt, self.Smelled = best, bestNode, nil, now, best
@@ -420,6 +421,9 @@ function ENT:Adopt(other)
 		if not self.Touching[ent] then self.Touching[ent] = st end
 	end
 	for ent in pairs(other.Dragged) do self.Dragged[ent] = true end
+	for ent, t in pairs(other.Threads) do
+		if not self.Threads[ent] then self.Threads[ent] = t end
+	end
 	for rag in pairs(other.Claimed) do self:Claim(rag) end
 	other.Claimed = {}
 	for _, p in ipairs(other.Pending) do self.Pending[#self.Pending + 1] = p end
@@ -433,6 +437,7 @@ end
 
 function ENT:Felt(ent, node, now, from)
 	if not IsValid(ent) or node.dead or not self:Perceivable(ent, self:Touches(ent)) then return end
+	self.Threads[ent] = { node = node, from = from, at = now }
 	local prey = self.Prey
 	if IsValid(prey) and prey ~= ent then
 		if self.Eating then return end

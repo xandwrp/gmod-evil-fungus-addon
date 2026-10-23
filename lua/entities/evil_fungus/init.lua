@@ -73,6 +73,10 @@ local DETOUR_LEAN = 0.3
 local DETOUR_HOLD = 6
 local DETOUR_OFF = 64
 local DETOUR_MOVED = 256
+local LOBE_BODY = 12
+local BIAS_RATE = 600
+local BIAS_MAX = 3000
+local WANT = { hunt = 4, tend = 3, carrion = 2, roam = 1, on = 3, felt = 2, nest = 2, food = 1 }
 
 local ai_disabled = GetConVar("ai_disabled")
 
@@ -155,6 +159,7 @@ function ENT:Initialize()
 
 	self.Center, self.Up, self.Body = seed.pos, up, share * #ring
 	self.ReachDebt, self.SpreadDebt, self.WeaveDebt = 0, 0, 0
+	self.Parts, self.Bias, self.ReachTurn = {}, {}, 0
 	self.NextDecide = 0
 	self.TargetUntil = 0
 	self.Claimed = {}
@@ -396,6 +401,8 @@ function ENT:Retract()
 end
 
 function ENT:Decide(now)
+	self.Threads, self.Parts, self.Bias = self.Threads or {}, self.Parts or {}, self.Bias or {}
+	self.ReachTurn = self.ReachTurn or 0
 	self:Settle()
 	if next(self.Mat.woven) then self:Unravel() end
 	if next(self.Mat.air) and now - (self.TunnelAt or -math.huge) > AIR_HOLD then self:Retract() end
@@ -408,6 +415,9 @@ function ENT:Decide(now)
 	if still and not self.Hunting and prey:IsPlayer() then self.Mind:Watch(prey, "outrun", 1) end
 	if not self.Hunting then
 		self.Prey, self.PreyNode, self.PreyFrom, self.Eating = nil, nil, nil, nil
+	end
+	for ent, t in pairs(self.Threads) do
+		if now - t.at >= memory or t.node.dead or not self:Perceivable(ent, t.smelled) then self.Threads[ent] = nil end
 	end
 
 	local aloft = self.Hunting and known and self:Aloft(prey) or 0
@@ -454,11 +464,14 @@ function ENT:Decide(now)
 	end
 	self.Goal = goal
 
+	local want = self.Hunting and WANT.hunt or self.Tending and WANT.tend or self.Carrion and WANT.carrion or WANT.roam
+	local sources, owner = self:Lobes(goal, want)
+
 	-- Only the body needs to know the way, so the search ends once it has reached every part of it.
 	local mat = self.Mat
 	local left, reached = 0, {}
 	for _ in pairs(mat.full) do left = left + 1 end
-	self.Dist = mat:Distances({ [goal] = 0 }, function(e)
+	self.Dist = mat:Distances(sources, function(e)
 		if e.a.burn or e.b.burn then return BURN_COST end
 		local heat = math.max(e.a.heat or 0, e.b.heat or 0)
 		return e.len / mat:Conductance(e, now) * (1 + heat * HEAT_COST)
@@ -468,7 +481,75 @@ function ENT:Decide(now)
 			reached[node] = true
 			left = left - 1
 			return left <= 0
-		end)
+		end, owner)
+	self:Balance(owner)
+end
+
+function ENT:Errands()
+	local list = {}
+	for ent, st in pairs(self.Touching) do
+		if ent ~= self.Prey and IsValid(ent) and st.node and not st.node.dead then
+			list[#list + 1] = { key = ent, goal = st.node, want = st.food and WANT.food or WANT.on }
+		end
+	end
+	for ent, t in pairs(self.Threads) do
+		if ent ~= self.Prey and not self.Touching[ent] and IsValid(ent) then
+			local target = t.smelled and ent:GetPos() or t.from or t.node.pos
+			local goal = self:Closest(target, true)
+			if goal then list[#list + 1] = { key = ent, goal = goal, target = target, want = WANT.felt } end
+		end
+	end
+	if self.Hunting then
+		local s = self:Patient()
+		if s then list[#list + 1] = { key = s.rag, goal = s.nest, want = WANT.nest } end
+	end
+	table.sort(list, function(a, b) return a.want > b.want end)
+	return list
+end
+
+function ENT:Lobes(goal, want)
+	local list = { { key = "main", goal = goal, want = want } }
+	local cap = math.min(math.floor(EvilFungus.Setting("split")), math.floor(self.Body / LOBE_BODY))
+	if cap > 1 then
+		for _, lobe in ipairs(self:Errands()) do
+			if #list >= cap then break end
+			list[#list + 1] = lobe
+		end
+	end
+	self.Parts = list
+	local sources, owner = {}, {}
+	for _, lobe in ipairs(list) do
+		local start = -(self.Bias[lobe.key] or 0)
+		if not sources[lobe.goal] or start < sources[lobe.goal] then
+			sources[lobe.goal], owner[lobe.goal] = start, lobe
+		end
+	end
+	self.Sources = sources
+	return sources, owner
+end
+
+function ENT:Balance(owner)
+	local list = self.Parts
+	if #list < 2 then
+		self.Bias = {}
+		return
+	end
+	local held, total, wanted = {}, 0, 0
+	for node in pairs(self.Mat.full) do
+		local lobe = owner[node]
+		if lobe then
+			held[lobe] = (held[lobe] or 0) + node.m
+			total = total + node.m
+		end
+	end
+	if total <= EMPTY then return end
+	for _, lobe in ipairs(list) do wanted = wanted + lobe.want end
+	local bias = {}
+	for _, lobe in ipairs(list) do
+		local gap = lobe.want / wanted - (held[lobe] or 0) / total
+		bias[lobe.key] = math.Clamp((self.Bias[lobe.key] or 0) + gap * BIAS_RATE, -BIAS_MAX, BIAS_MAX)
+	end
+	self.Bias = bias
 end
 
 -- The more it knows, the less it goes where you are and the more it goes where you're headed.
@@ -755,30 +836,39 @@ function ENT:Spread(dt, now)
 
 	-- New strands start empty, so the edge it grows from only changes once a strand's cost takes it under.
 	-- Only what's on a surface wanders off. What's up in the air is only ever there to reach something.
-	local frontier, best, bestD2 = nil, nil, math.huge
-	local target = self.Waypoint or self.Target
-	local tunnel = self.Hunting and self.Tunnel or 0
+	local frontier
+	local targets = {}
+	local main = self.Waypoint or self.Target
+	if main then targets[1] = { pos = main, tunnel = self.Hunting and self.Tunnel or 0 } end
+	for _, lobe in ipairs(self.Parts) do
+		if lobe.target then targets[#targets + 1] = { pos = lobe.target, tunnel = 0 } end
+	end
 	local function Scan()
-		frontier, best, bestD2 = {}, nil, math.huge
-		local tx, ty, tz
-		if target then tx, ty, tz = target:Unpack() end
+		frontier = {}
+		for _, t in ipairs(targets) do t.best, t.d2 = nil, math.huge end
 		for node in pairs(mat.full) do
 			if Frontier(node) then
 				if not node.air then frontier[#frontier + 1] = node end
-				if tx and (tunnel > 0 or not node.air) then
-					local dx, dy, dz = node.x - tx, node.y - ty, node.z - tz
-					local d2 = dx * dx + dy * dy + dz * dz
-					if Behind(node, tx, ty, tz) then d2 = d2 * BEHIND end
-					if d2 < bestD2 then best, bestD2 = node, d2 end
+				for _, t in ipairs(targets) do
+					if t.tunnel > 0 or not node.air then
+						local tx, ty, tz = t.pos:Unpack()
+						local dx, dy, dz = node.x - tx, node.y - ty, node.z - tz
+						local d2 = dx * dx + dy * dy + dz * dz
+						if Behind(node, tx, ty, tz) then d2 = d2 * BEHIND end
+						if d2 < t.d2 then t.best, t.d2 = node, d2 end
+					end
 				end
 			end
 		end
 	end
 
-	while self.ReachDebt >= 1 and target do
+	while self.ReachDebt >= 1 and #targets > 0 do
 		self.ReachDebt = self.ReachDebt - 1
-		if not frontier or best and not Frontier(best) then Scan() end
-		if best and bestD2 > ARRIVE * ARRIVE then
+		self.ReachTurn = self.ReachTurn % #targets + 1
+		local t = targets[self.ReachTurn]
+		if not frontier or t.best and not Frontier(t.best) then Scan() end
+		local best, target, tunnel = t.best, t.pos, t.tunnel
+		if best and t.d2 > ARRIVE * ARRIVE then
 			-- Going up after something in the air, it heads straight out through it, and climbs whatever's in the way.
 			local rise = tunnel > 0 and (best.air or math.random() < tunnel)
 			local jitter = REACH_JITTER * (0.5 + 0.5 * sprawl) * (rise and RISE_JITTER or 1)

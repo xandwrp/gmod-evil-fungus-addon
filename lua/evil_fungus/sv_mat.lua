@@ -539,7 +539,7 @@ end
 
 -- Graph distance from the sources, by each edge's cost, out to the limit.
 -- Stops as soon as stop(node, d) says so; everything nearer than that node is exact, the rest is left unfinished.
-function Mat:Distances(sources, cost, limit, stop)
+function Mat:Distances(sources, cost, limit, stop, owner)
 	limit = limit or math.huge
 	local dist, h = {}, { n = 0, d = {}, v = {} }
 	for node, d in pairs(sources) do
@@ -555,6 +555,7 @@ function Mat:Distances(sources, cost, limit, stop)
 				local nd = d + cost(e)
 				if nd <= limit and nd < (dist[other] or math.huge) then
 					dist[other] = nd
+					if owner then owner[other] = owner[node] end
 					Push(h, nd, other)
 				end
 			end

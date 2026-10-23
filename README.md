@@ -21,6 +21,7 @@ Entities > Syhgma's Evil Entities > Evil Fungus. Point it at the world, not a pr
 
 - Grows over floors, walls and ceilings, and feels you walking on it
 - Anyone on it long enough falls asleep and slowly gets replaced
+- Splits its body up through the mat to go after several people at once
 - Sleepers can be dragged off and saved for a while
 - Gets smarter with every head it keeps, and learns the ways people get away
 - Goes looking for bodies lying around

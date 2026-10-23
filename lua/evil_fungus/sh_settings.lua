@@ -43,6 +43,8 @@ EvilFungus.SETTINGS = {
 		help = "How much body each new strand costs. At 0 spreading is free and it never runs out" },
 	{ name = "sprawl", default = 1, min = 0, max = 5, decimals = 2, label = "Sprawl",
 		help = "How much it branches off at random instead of heading somewhere, and how much its paths wander" },
+	{ name = "split", default = 4, min = 1, max = 12, decimals = 0, label = "Splitting",
+		help = "How many things it can go after at once, sending part of its body through the mat to each. It only splits as far as it has body for. At 1 it keeps itself together" },
 	{ name = "spores", default = 1, min = 0, max = 10, decimals = 2, label = "Spores",
 		help = "How often a well-fed fungus throws spores that start new patches nearby. At 0 it never does" },
 	{ name = "carried", default = 1, min = 0, max = 10, decimals = 2, label = "Carried spores", needs = "EvilCrawler",
@@ -74,7 +76,7 @@ EvilFungus.PRESETS = {
 	{ name = "normal", label = "Normal", values = {} },
 	{ name = "unhinged", label = "Unhinged", values = {
 		sleep_time = 1, grip = 1, consume_time = 60, rescue_time = 15, hosts = 0.5, host_time = 60,
-		aggression = 20, learning = 4, smell = 3000, vibration = 2000, scavenge = 5000, grow_cost = 0.25, sprawl = 2.5, spores = 8, carried = 4,
+		aggression = 20, learning = 4, smell = 3000, vibration = 2000, scavenge = 5000, grow_cost = 0.25, sprawl = 2.5, split = 8, spores = 8, carried = 4,
 		max_nodes = 6000, start_mass = 150, grow_speed = 3, flow_speed = 3,
 	} },
 }

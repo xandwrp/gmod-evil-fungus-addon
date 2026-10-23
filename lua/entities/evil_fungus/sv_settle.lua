@@ -42,7 +42,7 @@ end
 
 local function Loose(self, mat, node, now, age)
 	return not node.air and not node.burn and not node.heat and not mat.woven[node] and node.m < GROW_MASS
-		and now - (node.born or 0) > age and node ~= self.Goal and node ~= self.PreyNode
+		and now - (node.born or 0) > age and node ~= self.Goal and node ~= self.PreyNode and not (self.Sources and self.Sources[node])
 end
 
 local function Key(cell, bucket)

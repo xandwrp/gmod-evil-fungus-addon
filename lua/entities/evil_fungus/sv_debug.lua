@@ -69,6 +69,10 @@ function ENT:DebugDraw(now)
 
 	if self.Goal and not self.Goal.dead then debugoverlay.Cross(self.Goal.pos, 16, life, GOAL, true) end
 	if self.Target then debugoverlay.Cross(self.Target, 10, life, TARGET, true) end
+	for i = 2, #(self.Parts or {}) do
+		local part = self.Parts[i]
+		if not part.goal.dead then debugoverlay.Line(self.Center, part.goal.pos, life, GOAL, true) end
+	end
 	if self.Hunting and IsValid(self.Prey) then
 		debugoverlay.Line(self.Center, self.Prey:GetPos(), life, PREY, true)
 	end
@@ -76,7 +80,7 @@ function ENT:DebugDraw(now)
 	local at, r = self.Center + self.Up * 24, self.CostReport
 	local air = 0
 	for _ in pairs(mat.air) do air = air + 1 end
-	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  mat %d  settled %d  air %d  tunnel %.2f"):format(state, self.Body, mat.count, mat.settledCount or 0, air, self.Tunnel or 0), life, TARGET)
+	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  parts %d  mat %d  settled %d  air %d  tunnel %.2f"):format(state, self.Body, #(self.Parts or {}), mat.count, mat.settledCount or 0, air, self.Tunnel or 0), life, TARGET)
 	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  settle %.2f  feel %.2f"):format(
 		r.decide or 0, r.flow or 0, r.grow or 0, r.settle or 0, r.feel or 0), life, TARGET)
 	local mind = self.Mind
