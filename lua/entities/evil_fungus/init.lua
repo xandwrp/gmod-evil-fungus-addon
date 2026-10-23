@@ -342,7 +342,7 @@ function ENT:PickTarget(now)
 	self.Resting = false
 	self.GoalStale = true
 
-	if self.Mat.count > PATROL_NODES and math.random() < PATROL_CHANCE then
+	if self.Limit or self.Mat.count > PATROL_NODES and math.random() < PATROL_CHANCE then
 		self.Target = RandomNode(self.Mat.nodes, function(n) return not n.air end).pos
 		return
 	end
@@ -430,13 +430,13 @@ function ENT:Decide(now)
 		self.GoalStale = true
 	else
 		local was = self.Carrion
-		local body = self:Scavenge(now)
+		local body = not self.Limit and self:Scavenge(now)
 		if body then
 			local pos = body:GetPos()
 			if body ~= was or not self.Target or self.Target:DistToSqr(pos) > ARRIVE * ARRIVE then self.GoalStale = true end
 			self.Target, self.Lure, self.Resting = pos, nil, false
 			self.TargetUntil = now + WANDER_TIME[1]
-		elseif self.Lure then
+		elseif self.Lure and not self.Limit then
 			self.Target, self.Lure, self.Resting, self.GoalStale = self.Lure, nil, false, true
 			self.TargetUntil = now + math.Rand(WANDER_TIME[1], WANDER_TIME[2])
 		end
@@ -718,6 +718,7 @@ function ENT:Fuse(other, mine, theirs, now)
 	else
 		keep.Open = nil
 	end
+	keep.Limit = keep.Limit and lose.Limit and keep.Limit + lose.Limit or nil
 	EvilFungus.Converge(keep.Mind, lose.Mind)
 	keep.Mat:Link(mine, theirs, now)
 	keep:Adopt(lose)
@@ -746,7 +747,7 @@ function ENT:Spread(dt, now)
 	self.ReachDebt = math.min(cap, self.ReachDebt + reach * speed * dt)
 	self.SpreadDebt = math.min(cap, self.SpreadDebt + SPREAD_RATE * sprawl * speed * dt)
 	if self.ReachDebt < 1 and self.SpreadDebt < 1 and not self.Tending then return end
-	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") then
+	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") or self.Limit and mat.count - mat.wovenCount >= self.Limit then
 		self.ReachDebt, self.SpreadDebt = 0, 0
 		self:Weave(dt, now, speed)
 		return
@@ -867,12 +868,12 @@ end
 local Taken = EvilFungus.Taken
 
 -- A new patch on the ground at pos, starting with that much body and thinking with that mind.
-function EvilFungus.Plant(pos, normal, mass, mind, creator)
+function EvilFungus.Plant(pos, normal, mass, mind, creator, limit)
 	local spore = ents.Create("evil_fungus")
 	if not IsValid(spore) then return end
 	spore:SetPos(pos + normal * 4)
 	spore.SpawnAt, spore.SpawnUp, spore.StartMass = pos, normal, mass
-	spore.Mind = mind
+	spore.Mind, spore.Limit = mind, limit
 	spore:Spawn()
 	spore:Activate()
 	Own(spore, creator)
@@ -916,7 +917,7 @@ end
 -- Whoever it can smell getting away gets one at their feet, or once it's learned a bit, wherever they're running to.
 function ENT:Spores(dt)
 	local rate = EvilFungus.Setting("spores")
-	if rate <= 0 or self.Body < SPORE_BODY then
+	if rate <= 0 or self.Limit or self.Body < SPORE_BODY then
 		self.SporeDebt = 0
 		return
 	end
