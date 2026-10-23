@@ -233,7 +233,7 @@ local function Expose(h)
 end
 
 local function Prey(ent)
-	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep or EvilFungus.CrawlerHas(ent) or Evil.Owner(ent) then return false end
+	if not IsValid(ent) or ent:IsFlagSet(FL_NOTARGET) or ent.EvilFungusAsleep or ent.EvilFungusAlly or EvilFungus.CrawlerHas(ent) or Evil.Owner(ent) then return false end
 	if ent:IsPlayer() then
 		return EvilFungus.Setting("attack_players") > 0
 			and not (ai_ignoreplayers and ai_ignoreplayers:GetBool())
