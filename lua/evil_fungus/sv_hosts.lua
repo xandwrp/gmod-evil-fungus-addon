@@ -64,6 +64,9 @@ local TETHER_HEIGHT = 128
 local PACE_AHEAD = 35
 local PACE_OUT = 0.75
 local PACE_TURN = { 8, 16 }
+local PACE_EYE = 32
+local PACE_GAP = 32
+local WALL_GAP = 16
 local HAND_OFF = 0.6
 
 local PERCH_UP = 700
@@ -479,6 +482,12 @@ local function Steer(h, goal, speed, now, dt)
 		local out = Vector(root.x - t.at.x, root.y - t.at.y, 0)
 		local len = out:Length()
 		if len > t.radius then root = Vector(t.at.x, t.at.y, root.z) + out * (t.radius / len) end
+		local from = Vector(actual.x, actual.y, root.z + rig.stand * 0.5)
+		local tr = util.TraceLine({ start = from, endpos = Vector(root.x, root.y, from.z), filter = Solid, mask = MASK_SOLID })
+		if tr.Hit and not tr.StartSolid then
+			local back = tr.HitPos - tr.Normal * WALL_GAP
+			root = Vector(back.x, back.y, root.z)
+		end
 	end
 	local ground = Floor(Vector(root.x, root.y, actual.z), 512)
 	if ground then root.z = ground.z end
@@ -506,7 +515,11 @@ local function Pace(h, now)
 	end
 	local out = Vector(h.root.x - t.at.x, h.root.y - t.at.y, 0)
 	local yaw = out:LengthSqr() > 1 and out:Angle().y or math.Rand(0, 360)
-	return t.at + Angle(0, yaw + h.pace * PACE_AHEAD, 0):Forward() * (t.radius * PACE_OUT)
+	local dir = Angle(0, yaw + h.pace * PACE_AHEAD, 0):Forward()
+	local from = t.at + vector_up * PACE_EYE
+	local tr = util.TraceLine({ start = from, endpos = from + dir * (t.radius * PACE_OUT), filter = Solid, mask = MASK_SOLID })
+	local goal = tr.HitPos - dir * (tr.Hit and PACE_GAP or 0)
+	return Vector(goal.x, goal.y, t.at.z)
 end
 
 local function Ceiling(pelvis, groundZ)
