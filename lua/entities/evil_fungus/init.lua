@@ -960,6 +960,8 @@ function ENT:OnRemove()
 			local s = EvilFungus.Sleepers[rag]
 			if s and s.stage < EvilFungus.KEPT then
 				EvilFungus.Sleep.Free(s)
+			elseif EvilFungus.Sleep.wired[rag] then
+				EvilFungus.Sleep.wired[rag].fungus = nil
 			elseif IsValid(rag) then
 				rag:Remove()
 			end

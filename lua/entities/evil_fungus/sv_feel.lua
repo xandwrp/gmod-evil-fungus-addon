@@ -486,7 +486,8 @@ function ENT:Breathe(dt)
 		if not IsValid(rag) then
 			self.Claimed[rag] = nil
 		elseif not (s and s.corpse) then
-			local node = mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
+			local w = EvilFungus.Sleep.wired[rag]
+			local node = w and w.fungus == self and not w.nest.dead and w.nest or mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
 			if node then mat:SetMass(node, node.m + BREATH_GAIN * dt) end
 		end
 	end

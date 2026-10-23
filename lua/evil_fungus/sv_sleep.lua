@@ -1,6 +1,7 @@
 EvilFungus = EvilFungus or {}
 local Sleep = EvilFungus.Sleep or { drowsy = {}, sleepers = {} }
 Sleep.dreamers = Sleep.dreamers or {}
+Sleep.wired = Sleep.wired or {}
 EvilFungus.Sleep = Sleep
 EvilFungus.Sleepers = Sleep.sleepers
 
@@ -17,6 +18,7 @@ local LET_GO = 3
 local HIT_GRACE = 2
 local SLAM_SPEED = 250
 local WAKE_AFTER = 10
+local WIRE_REACH = 96
 
 local SHRINK_SPAN = 0.25
 local FOOD_PER_KG = 0.5
@@ -605,6 +607,63 @@ local function Digest(s, now)
 	end
 end
 
+local function Nest(at)
+	local pad = Vector(WIRE_REACH, WIRE_REACH, WIRE_REACH)
+	local best, bestD, owner
+	for colony in pairs(EvilFungus.Colonies or {}) do
+		local mat = IsValid(colony) and not colony.Absorbed and colony.Mat
+		if mat and mat.mins and at:WithinAABox(mat.mins - pad, mat.maxs + pad) then
+			local node, d = mat:Nearest(at, WIRE_REACH, function(n) return not n.air and not n.burn end)
+			if node and (not bestD or d < bestD) then best, bestD, owner = node, d, colony end
+		end
+	end
+	return best, owner
+end
+
+function EvilFungus.Unwire(rag)
+	local w = Sleep.wired[rag]
+	if not w then return end
+	Sleep.wired[rag] = nil
+	if IsValid(w.fungus) then w.fungus:Unclaim(rag) end
+	if IsValid(rag) then rag:SetNW2Int(EvilFungus.STAGE_VAR, 0) end
+end
+
+local function Rewire(rag, w)
+	local node, colony = Nest(w.at)
+	if not node then return EvilFungus.Unwire(rag) end
+	if colony ~= w.fungus then
+		if IsValid(w.fungus) then w.fungus:Unclaim(rag) end
+		colony:Claim(rag)
+		w.fungus = colony
+	end
+	if w.nest ~= node then
+		w.nest = node
+		rag:SetNW2Vector(EvilFungus.NEST_VAR, node.pos)
+		rag:SetNW2Vector(EvilFungus.NEST_UP_VAR, node.normal)
+	end
+end
+
+-- Something else's catch, held still close enough under it to wire the head in. Kept, but never eaten.
+function EvilFungus.Wire(rag, at)
+	if Sleep.wired[rag] then return true end
+	if Sleep.sleepers[rag] then return false end
+	local node, colony = Nest(at)
+	if not node then return false end
+	local w = { at = at }
+	Sleep.wired[rag] = w
+	rag:SetNW2Float(EvilFungus.SINCE_VAR, CurTime())
+	rag:SetNW2Float(EvilFungus.CONSUMED_VAR, 0)
+	rag:SetNW2Bool(EvilFungus.WHOLE_VAR, false)
+	rag:SetNW2Int(EvilFungus.STAGE_VAR, KEPT)
+	rag:SetNW2Float(EvilFungus.STAGE_AT_VAR, CurTime())
+	Rewire(rag, w)
+	if not rag.EvilFungusKept then
+		rag.EvilFungusKept = true
+		colony.Mind:Keep(EvilFungus.Brain(rag))
+	end
+	return true
+end
+
 local nextUpdate, nextConsume = 0, 0
 
 hook.Add("Think", "EvilFungusSleep", function()
@@ -644,6 +703,14 @@ hook.Add("Think", "EvilFungusSleep", function()
 				elseif s.stage == FREED and now - s.stageAt >= WAKE_AFTER then
 					Wake(s)
 				end
+			end
+		end
+
+		for rag, w in pairs(Sleep.wired) do
+			if not IsValid(rag) then
+				Sleep.wired[rag] = nil
+			elseif not IsValid(w.fungus) or w.fungus.Absorbed or w.nest.dead or w.nest.burn then
+				Rewire(rag, w)
 			end
 		end
 

@@ -11,7 +11,7 @@ On the [Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3821991
 Optional:
 
 - Evil Crawling Thing, crawlers walk through it and carry spores off somewhere else
-- Evil barnacles, each one grows a small patch of it around itself that joins up with the rest
+- Evil barnacles, each one grows a small patch of it around itself that joins up with the rest, and whatever they catch gets wired in
 
 ## Spawning
 
