@@ -97,7 +97,7 @@ timer.Create("EvilFungusTint", 1, 0, function()
 	if not Tint() or not EvilFungus.Client then return end
 	for _, node in pairs(EvilFungus.Client.nodes or {}) do node.sheet = nil end
 	for _, chunk in pairs(EvilFungus.Client.chunks or {}) do EvilFungus.Client.Stale(chunk, 0) end
-	for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
+	for _, rag in ipairs(ents.FindByClass("prop_ragdoll*")) do
 		if rag.EvilFungusMesh then
 			rag.EvilFungusMesh:Destroy()
 			rag.EvilFungusMesh = nil
@@ -131,7 +131,7 @@ for _, cell in pairs(EvilFungus.Client and EvilFungus.Client.bodyCells or {}) do
 	if cell.bodyMesh then cell.bodyMesh:Destroy() end
 	cell.bodyMesh, cell.bodyBuilt = nil, nil
 end
-for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
+for _, rag in ipairs(ents.FindByClass("prop_ragdoll*")) do
 	if rag.EvilFungusMesh then
 		rag.EvilFungusMesh:Destroy()
 		rag.EvilFungusMesh = nil

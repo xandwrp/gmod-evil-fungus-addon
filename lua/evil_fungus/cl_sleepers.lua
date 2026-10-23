@@ -411,7 +411,7 @@ EvilFungus.DrawPass("EvilFungusSleepers", function()
 			if IsValid(rag) and rag:GetNW2Int(EvilFungus.STAGE_VAR, 0) ~= KEPT then Forget(rag) end
 		end
 		sleepers = {}
-		for _, rag in ipairs(ents.FindByClass("prop_ragdoll")) do
+		for _, rag in ipairs(ents.FindByClass("prop_ragdoll*")) do
 			if rag:GetNW2Int(EvilFungus.STAGE_VAR, 0) > 0 then sleepers[#sleepers + 1] = rag end
 		end
 	end
