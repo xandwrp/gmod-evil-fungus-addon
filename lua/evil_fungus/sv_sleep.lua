@@ -323,6 +323,7 @@ end
 function Sleep.Raise(s)
 	local rag = s.rag
 	Sleep.sleepers[rag] = nil
+	Sleep.wired[rag] = nil
 	if IsValid(s.fungus) then s.fungus:Unclaim(rag) end
 	rag:SetNW2Int(KEPT_VAR, 0)
 	for i = 0, rag:GetPhysicsObjectCount() - 1 do

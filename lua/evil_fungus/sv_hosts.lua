@@ -59,6 +59,12 @@ local WANDER_RANGE = { 250, 600 }
 local SHED = { 12, 20 }
 local SHED_MASS = 20
 local SHED_CLEAR = 300
+local TETHER_REACH = 64
+local TETHER_HEIGHT = 128
+local PACE_AHEAD = 35
+local PACE_OUT = 0.75
+local PACE_TURN = { 8, 16 }
+local HAND_OFF = 0.6
 
 local PERCH_UP = 700
 local PERCH_MIN = 110
@@ -217,6 +223,10 @@ local function Fights(npc)
 	return IsValid(npc) and npc:IsNPC() and npc:GetClass() ~= "npc_bullseye"
 end
 
+local function Hates(npc)
+	return Fights(npc) and not npc.EvilFungusAlly
+end
+
 local function Expose(h)
 	local eye = ents.Create("npc_bullseye")
 	if not IsValid(eye) then return end
@@ -228,7 +238,7 @@ local function Expose(h)
 	h.rag:DeleteOnRemove(eye)
 	h.eye = eye
 	for _, npc in ipairs(ents.GetAll()) do
-		if Fights(npc) then npc:AddEntityRelationship(eye, D_HT, 0) end
+		if Hates(npc) then npc:AddEntityRelationship(eye, D_HT, 0) end
 	end
 end
 
@@ -248,11 +258,18 @@ local function Smells(from, ent)
 	return not util.TraceLine({ start = from, endpos = ent:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit
 end
 
+local function Within(h, ent)
+	local t = h.tether
+	if not t then return true end
+	local p, r = ent:GetPos(), t.radius + TETHER_REACH
+	return (p.x - t.at.x) ^ 2 + (p.y - t.at.y) ^ 2 < r * r and math.abs(p.z - t.at.z) < TETHER_HEIGHT
+end
+
 local function Pick(h, from)
 	local best, bestD2 = nil, SIGHT * SIGHT
 	local function Try(ent)
 		local d2 = ent:GetPos():DistToSqr(from)
-		if d2 < bestD2 and Prey(ent) and Smells(from, ent) then best, bestD2 = ent, d2 end
+		if d2 < bestD2 and Prey(ent) and Within(h, ent) and Smells(from, ent) then best, bestD2 = ent, d2 end
 	end
 	for _, ply in ipairs(player.GetAll()) do Try(ply) end
 	for ent in pairs(EvilFungus.Creatures or {}) do
@@ -457,6 +474,12 @@ local function Steer(h, goal, speed, now, dt)
 		off:Normalize()
 		root = Vector(actual.x, actual.y, root.z) + off * LEASH
 	end
+	local t = h.tether
+	if t then
+		local out = Vector(root.x - t.at.x, root.y - t.at.y, 0)
+		local len = out:Length()
+		if len > t.radius then root = Vector(t.at.x, t.at.y, root.z) + out * (t.radius / len) end
+	end
 	local ground = Floor(Vector(root.x, root.y, actual.z), 512)
 	if ground then root.z = ground.z end
 	h.root = root
@@ -473,6 +496,17 @@ local function Wander(h, now, from)
 	local tr = util.TraceLine({ start = from, endpos = from + dir * math.Rand(WANDER_RANGE[1], WANDER_RANGE[2]), filter = Solid, mask = MASK_SOLID })
 	h.wanderGoal = tr.HitPos - dir * 32
 	return h.wanderGoal
+end
+
+local function Pace(h, now)
+	local t = h.tether
+	if now >= (h.paceAt or 0) then
+		h.paceAt = now + math.Rand(PACE_TURN[1], PACE_TURN[2])
+		h.pace = math.random() < 0.5 and -1 or 1
+	end
+	local out = Vector(h.root.x - t.at.x, h.root.y - t.at.y, 0)
+	local yaw = out:LengthSqr() > 1 and out:Angle().y or math.Rand(0, 360)
+	return t.at + Angle(0, yaw + h.pace * PACE_AHEAD, 0):Forward() * (t.radius * PACE_OUT)
 end
 
 local function Ceiling(pelvis, groundZ)
@@ -509,6 +543,12 @@ local function Wall(pelvis, groundZ)
 	if best then return best[1], best[2], best[3] end
 end
 
+local function Fall(h, now, at)
+	local _, up = Floor(at, h.rig.leg * 3)
+	h.perch, h.normal, h.anchor, h.state = h.root, up or vector_up, nil, "writhe"
+	h.stateAt, h.nextKick = now, now
+end
+
 local function Climb(h, now)
 	if h.haul then Release(h) end
 	h.prey = nil
@@ -518,12 +558,7 @@ local function Climb(h, now)
 	local base
 	if not perch then perch, normal, base = Wall(at, h.root.z) end
 	h.stateAt = now
-	if not perch then
-		local _, up = Floor(at, h.rig.leg * 3)
-		h.perch, h.normal, h.anchor, h.state = h.root, up or vector_up, nil, "writhe"
-		h.nextKick = now
-		return
-	end
+	if not perch then return Fall(h, now, at) end
 	h.perch, h.normal, h.base = perch, normal, base
 	h.anchor = perch + normal * HANG
 	if base then
@@ -580,6 +615,12 @@ local function Shed(h, now)
 	if pos then Plant(h, h.rag:GetPos(), pos, normal, SHED_MASS, SHED_CLEAR) end
 end
 
+local function Pass(h, now)
+	h.tether, h.prey, h.grabbing = nil, nil, nil
+	local pelvis = Part(h, "pelvis")
+	Fall(h, now, pelvis and pelvis:GetPos() or h.root)
+end
+
 local function Walk(h, now, dt)
 	if h.haul and not Hauling(h, now) then Release(h) end
 	local head = Part(h, "head")
@@ -596,17 +637,17 @@ local function Walk(h, now, dt)
 			end
 		end
 		if not h.haul then
-			if now >= h.dies or not Colony(h) then
+			if not h.tether and (now >= h.dies or not Colony(h)) then
 				Climb(h, now)
 				return
 			end
-			if not (Prey(h.prey) and h.prey:GetPos():DistToSqr(from) < SIGHT * SIGHT * 1.5) then h.prey = Pick(h, from) end
-			h.goal = IsValid(h.prey) and h.prey:GetPos() or Wander(h, now, from)
+			if not (Prey(h.prey) and Within(h, h.prey) and h.prey:GetPos():DistToSqr(from) < SIGHT * SIGHT * 1.5) then h.prey = Pick(h, from) end
+			h.goal = IsValid(h.prey) and h.prey:GetPos() or (h.tether and Pace(h, now) or Wander(h, now, from))
 		end
 	end
 
 	local speed, reach = h.haul and HAUL_SPEED or SPEED, nil
-	if h.prey and not Prey(h.prey) then h.prey = nil end
+	if h.prey and not (Prey(h.prey) and Within(h, h.prey)) then h.prey = nil end
 	local prey = not h.haul and h.prey
 	if IsValid(prey) then
 		h.goal = prey:GetPos()
@@ -616,14 +657,21 @@ local function Walk(h, now, dt)
 		if d2 < (REACH + h.rig.neck) ^ 2 then
 			reach = center
 			if not h.grabbing then
-				h.grabbing = true
+				h.grabbing = now
 				h.rag:EmitSound(string.format(GRAB_SOUND, math.random(1, 2)), 70, math.random(70, 85))
 			end
-			local dose = dt * EvilFungus.TimeScale() / (math.max(0.1, EvilFungus.Setting("sleep_time")) * DOSE)
-			local under, rag = EvilFungus.Sedate(prey, dose, Colony(h))
-			if under then
-				h.grabbing = nil
-				Grab(h, rag, now)
+			if h.tether then
+				if now - h.grabbing >= HAND_OFF then
+					if h.tether.catch(h.rag, prey) then return Pass(h, now) end
+					h.grabbing = now
+				end
+			else
+				local dose = dt * EvilFungus.TimeScale() / (math.max(0.1, EvilFungus.Setting("sleep_time")) * DOSE)
+				local under, rag = EvilFungus.Sedate(prey, dose, Colony(h))
+				if under then
+					h.grabbing = nil
+					Grab(h, rag, now)
+				end
 			end
 		else
 			h.grabbing = nil
@@ -712,12 +760,12 @@ function Hosts.Roll(s)
 	return math.min(1, math.max((s.progress or 0) + 0.05, math.Rand(RISE_AT[1], RISE_AT[2])))
 end
 
-function Hosts.Rise(s)
+function Hosts.Rise(s, tether)
 	local rag = s.rag
 	local rig = Rig(rag)
-	if not rig or Count() >= MAX_HOSTS then
+	if not rig or not tether and Count() >= MAX_HOSTS then
 		s.rise = false
-		return
+		return false
 	end
 	local colony = IsValid(s.fungus) and s.fungus or nil
 	EvilFungus.Sleep.Raise(s)
@@ -732,13 +780,23 @@ function Hosts.Rise(s)
 		state = "rise", stateAt = now, phase = 0, moving = 0,
 		dies = now + EvilFungus.Setting("host_time") / EvilFungus.TimeScale(),
 		nextScan = 0, nextShed = now + math.Rand(SHED[1], SHED[2]), nextGroan = now + math.Rand(GROAN[1], GROAN[2]),
+		tether = tether, bound = tether ~= nil,
 	}
+	if tether then h.dies = math.huge end
 	h.yaw = Facing(h)
 	Reset(h)
 	list[rag] = h
 	Expose(h)
 	if IsValid(h.creator) and cleanup then cleanup.Add(h.creator, "sents", rag) end
 	rag:EmitSound(string.format(RISE_SOUND, math.random(1, 3)), 75, math.random(80, 95))
+	return true
+end
+
+function Hosts.Unleash(rag)
+	local h = list[rag]
+	if not h or not h.tether then return end
+	h.tether, h.prey, h.grabbing = nil, nil, nil
+	h.dies = CurTime()
 end
 
 function Hosts.Clear()
@@ -753,7 +811,7 @@ hook.Add("Think", "EvilFungusHosts", function()
 	for rag, h in pairs(list) do
 		if not IsValid(rag) then
 			list[rag] = nil
-		elseif off or EvilFungus.CrawlerHas(rag) then
+		elseif off and not h.bound or EvilFungus.CrawlerHas(rag) then
 			Collapse(h)
 		elseif limp then
 			h.limp = true
@@ -808,7 +866,7 @@ end)
 hook.Add("OnEntityCreated", "EvilFungusHosts", function(ent)
 	if not next(list) or not ent:IsNPC() then return end
 	timer.Simple(0, function()
-		if not Fights(ent) then return end
+		if not Hates(ent) then return end
 		for _, h in pairs(list) do
 			if IsValid(h.eye) then ent:AddEntityRelationship(h.eye, D_HT, 0) end
 		end
