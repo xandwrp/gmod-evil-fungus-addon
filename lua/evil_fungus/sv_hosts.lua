@@ -481,7 +481,12 @@ local function Steer(h, goal, speed, now, dt)
 	if t then
 		local out = Vector(root.x - t.at.x, root.y - t.at.y, 0)
 		local len = out:Length()
-		if len > t.radius then root = Vector(t.at.x, t.at.y, root.z) + out * (t.radius / len) end
+		if len > t.radius then
+			root = Vector(t.at.x, t.at.y, root.z) + out * (t.radius / len)
+		elseif t.hole and len < t.hole then
+			local away = len > 0.01 and out / len or Angle(0, h.yaw, 0):Forward()
+			root = Vector(t.at.x, t.at.y, root.z) + away * t.hole
+		end
 		local from = Vector(actual.x, actual.y, root.z + rig.stand * 0.5)
 		local tr = util.TraceLine({ start = from, endpos = Vector(root.x, root.y, from.z), filter = Solid, mask = MASK_SOLID })
 		if tr.Hit and not tr.StartSolid then
