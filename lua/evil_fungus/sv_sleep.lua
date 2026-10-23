@@ -570,7 +570,7 @@ function Sleep.Wrap(rag, fungus)
 end
 
 local function Wither(s)
-	s.progress = math.min(1, s.progress + CONSUME_UPDATE * EvilFungus.TimeScale() / math.max(1, EvilFungus.Setting("consume_time")))
+	s.progress = math.min(1, s.progress + CONSUME_UPDATE * EvilFungus.TimeScale() / math.max(1, s.span or EvilFungus.Setting("consume_time")))
 	local k = s.progress
 	local min = EvilFungus.Setting("shrink") > 0 and EvilFungus.MIN_SCALE or 1
 	for _, b in ipairs(s.schedule) do
@@ -652,12 +652,12 @@ local function Rewire(rag, w)
 	end
 end
 
-function EvilFungus.Wire(rag, at)
+function EvilFungus.Wire(rag, at, span)
 	if Sleep.wired[rag] then return true end
 	if Sleep.sleepers[rag] then return false end
 	local node, colony = Nest(at)
 	if not node then return false end
-	local w = { rag = rag, at = at, schedule = Schedule(rag), progress = 0, fed = 0,
+	local w = { rag = rag, at = at, span = span, schedule = Schedule(rag), progress = 0, fed = 0,
 		food = math.Clamp(Kilos(rag) * FOOD_PER_KG, FOOD_VALUE[1], FOOD_VALUE[2]) }
 	Sleep.wired[rag] = w
 	rag:SetNW2Float(EvilFungus.SINCE_VAR, CurTime())
