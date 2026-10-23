@@ -226,8 +226,9 @@ local function Fights(npc)
 	return IsValid(npc) and npc:IsNPC() and npc:GetClass() ~= "npc_bullseye"
 end
 
-local function Hates(npc)
-	return Fights(npc) and not npc.EvilFungusAlly
+local function Regard(npc, eye)
+	if not Fights(npc) then return end
+	npc:AddEntityRelationship(eye, npc.EvilFungusAlly and D_NU or D_HT, npc.EvilFungusAlly and 99 or 0)
 end
 
 local function Expose(h)
@@ -240,9 +241,7 @@ local function Expose(h)
 	eye:Activate()
 	h.rag:DeleteOnRemove(eye)
 	h.eye = eye
-	for _, npc in ipairs(ents.GetAll()) do
-		if Hates(npc) then npc:AddEntityRelationship(eye, D_HT, 0) end
-	end
+	for _, npc in ipairs(ents.GetAll()) do Regard(npc, eye) end
 end
 
 local function Prey(ent)
@@ -884,9 +883,9 @@ end)
 hook.Add("OnEntityCreated", "EvilFungusHosts", function(ent)
 	if not next(list) or not ent:IsNPC() then return end
 	timer.Simple(0, function()
-		if not Hates(ent) then return end
+		if not Fights(ent) then return end
 		for _, h in pairs(list) do
-			if IsValid(h.eye) then ent:AddEntityRelationship(h.eye, D_HT, 0) end
+			if IsValid(h.eye) then Regard(ent, h.eye) end
 		end
 	end)
 end)
