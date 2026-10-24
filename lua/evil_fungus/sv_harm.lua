@@ -4,7 +4,7 @@ EvilFungus.Harm = Harm
 
 local TICK = 0.2
 local SCAN = 0.25
-local BURN_TIME = 3
+local BURN_TIME = 3 -- Seconds a strand burns at burn speed 1.
 local SPREAD = 0.15
 local CATCH = 0.5
 local LEAP = 0.1
@@ -36,6 +36,15 @@ local function On()
 	return EvilFungus.Setting("killable") > 0
 end
 
+local function BurnSpeed()
+	return EvilFungus.Setting("burn_speed")
+end
+
+-- Killable covers bullets and explosions too, so fire gets its own switch.
+local function FireOn()
+	return On() and BurnSpeed() > 0
+end
+
 local function Around(pos, radius)
 	local list, pad = {}, Vector(radius, radius, radius)
 	for colony in pairs(EvilFungus.Colonies or {}) do
@@ -52,7 +61,7 @@ end
 local queued = {}
 
 function Harm.Ignite(colony, node, now)
-	if node.burn or node.dead then return end
+	if not FireOn() or node.burn or node.dead then return end
 	node.burn = now
 	colony.Mat.burning[node] = now
 	if node.nid then queued[#queued + 1] = node.nid end
@@ -106,12 +115,14 @@ function Harm.Blast(pos, radius)
 end
 
 local function Catch(pos, radius, now)
+	if not FireOn() then return end
+	local chance = math.min(1, CATCH * BurnSpeed())
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
 		colony.Mat:Wake(pos, radius, now)
 		colony.Mat:Near(pos, radius, function(node) hit[#hit + 1] = node end)
 		for _, node in ipairs(hit) do
-			if math.random() < CATCH then Harm.Ignite(colony, node, now) end
+			if math.random() < chance then Harm.Ignite(colony, node, now) end
 		end
 	end
 end
@@ -201,6 +212,11 @@ local function Leap(node, now)
 end
 
 local function Burn(now)
+	local speed = BurnSpeed()
+	if speed <= 0 then return end
+	local life = BURN_TIME / speed
+	local spreadChance = math.min(1, SPREAD * speed)
+	local leapChance = math.min(1, LEAP * speed)
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		local mat = IsValid(colony) and not colony.Absorbed and colony.Mat
 		if mat and next(mat.burning) then
@@ -208,14 +224,14 @@ local function Burn(now)
 			for node, at in pairs(mat.burning) do
 				if node.dead then
 					mat.burning[node] = nil
-				elseif now - at >= BURN_TIME then
+				elseif now - at >= life then
 					burnt[#burnt + 1] = node
 				else
 					for _, e in ipairs(node.edges) do
 						local other = e.a == node and e.b or e.a
-						if not other.burn and math.random() < SPREAD then spread[#spread + 1] = other end
+						if not other.burn and math.random() < spreadChance then spread[#spread + 1] = other end
 					end
-					if math.random() < LEAP then leap[#leap + 1] = node end
+					if math.random() < leapChance then leap[#leap + 1] = node end
 				end
 			end
 			for _, node in ipairs(spread) do Harm.Ignite(colony, node, now) end
@@ -250,14 +266,18 @@ local function Send()
 end
 
 local nextScan, nextTick = 0, 0
+local wasFireOn = true
 
 hook.Add("Think", "EvilFungusHarm", function()
 	local now = CurTime()
-	if now < nextTick and now < nextScan then return end
-	if not On() then
-		Douse()
+	if not FireOn() then
+		if wasFireOn then Douse() end
+		wasFireOn = false
+		nextScan, nextTick = now + SCAN, now + TICK
 		return
 	end
+	wasFireOn = true
+	if now < nextTick and now < nextScan then return end
 	if now >= nextScan then
 		nextScan = now + SCAN
 		Scan(now)
