@@ -1,4 +1,4 @@
-local BURN_TIME = 3
+local BURN_TIME = 3 -- Seconds a strand burns at burn speed 1.
 local CHECK = 0.05
 local RANGE = 3000
 local PER_CHECK = 120
@@ -34,13 +34,19 @@ hook.Add("Think", "EvilFungusFire", function()
 	local now = RealTime()
 	if now < nextCheck or not next(burning) then return end
 	nextCheck = now + CHECK
+	local speed = EvilFungus.Setting("burn_speed")
+	if speed <= 0 or EvilFungus.Setting("killable") <= 0 then
+		burning = {}
+		return
+	end
+	local life = BURN_TIME / speed
 	local nodes = EvilFungus.Client and EvilFungus.Client.nodes or {}
 	local eye = EvilFungus.View and EvilFungus.View.origin or EyePos()
 	local r2 = RANGE * RANGE
 	local emitter, made, nearest, nearestD2 = nil, 0, nil, math.huge
 	for nid, at in pairs(burning) do
 		local node = nodes[nid]
-		if not node or now - at > BURN_TIME + 1 then
+		if not node or now - at > life + 1 then
 			burning[nid] = nil
 		else
 			local d2 = node.pos:DistToSqr(eye)
