@@ -20,10 +20,12 @@ local function Fights(npc)
 end
 
 local function Meet(npc, eye, d)
+	local ally = npc.EvilFungusAlly
+	if ally then d = D_NU end
 	if npc.IsDrGNextbot and npc.SetEntityRelationship then
 		npc:SetEntityRelationship(eye, d, 1)
 	elseif Fights(npc) then
-		npc:AddEntityRelationship(eye, d, 0)
+		npc:AddEntityRelationship(eye, d, ally and 99 or 0)
 	end
 end
 
@@ -109,7 +111,7 @@ hook.Add("Think", "EvilFungusEnemy", function()
 	end
 	local npcs = {}
 	for _, npc in ipairs(ents.FindByClass("npc_*")) do
-		if Fights(npc) then
+		if Fights(npc) and not npc.EvilFungusAlly then
 			npcs[#npcs + 1] = npc
 			if #npcs >= NPCS then break end
 		end
