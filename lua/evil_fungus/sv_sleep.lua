@@ -287,7 +287,7 @@ end
 local function Freeze(rag)
 	for i = 0, rag:GetPhysicsObjectCount() - 1 do
 		local phys = rag:GetPhysicsObjectNum(i)
-		if IsValid(phys) then phys:EnableMotion(false) end
+		if IsValid(phys) and phys:IsMotionEnabled() then phys:EnableMotion(false) end
 	end
 end
 
@@ -704,6 +704,7 @@ hook.Add("Think", "EvilFungusSleep", function()
 				local owner = s.owner
 				if IsValid(owner) and not owner:IsPlayer() then owner:SetPos(rag:GetPos()) end
 				if s.stage == LOOSE or s.stage == CONSUMING then Check(s, now) end
+				if s.stage == KEPT then Freeze(rag) end
 				if s.stage == CONSUMING then s.held = s.held + UPDATE * scale end
 				if s.stage == CONSUMING and s.breakAt and s.held >= s.breakAt and IsValid(owner) then
 					s.breakAt = nil
