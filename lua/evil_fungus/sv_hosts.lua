@@ -25,6 +25,7 @@ local LOLL = 1.5
 local BOB = 1.5
 local KNEE = 0.12
 local STEP_TIME = 0.35
+local STEP_FAST = 0.2
 local STEP_LIFT = 8
 local ANKLE = 4
 local ARRIVE = 0.12
@@ -353,7 +354,7 @@ local function Reset(h)
 		local pos = foot and foot:GetPos() or h.root
 		h.feet[side] = { at = Floor(pos, h.rig.leg) or pos }
 	end
-	h.stuckPos, h.stuckAt = h.root, CurTime()
+	h.stuckPos, h.stuckAt, h.vel = h.root, CurTime(), nil
 end
 
 local function Facing(h)
@@ -376,7 +377,7 @@ end
 local function Step(h, side, sign, f, r, now, k)
 	local foot, rig = h.feet[side], h.rig
 	if foot.start then
-		local t = (now - foot.start) / STEP_TIME
+		local t = (now - foot.start) / (foot.time or STEP_TIME)
 		if t < 1 then return LerpVector(t, foot.from, foot.to) + vector_up * (math.sin(t * math.pi) * STEP_LIFT) end
 		foot.at, foot.start = foot.to, nil
 	end
@@ -387,8 +388,16 @@ local function Step(h, side, sign, f, r, now, k)
 	local otherHome = h.root - r * (sign * rig.hip)
 	local otherAway = Vector(other.at.x - otherHome.x, other.at.y - otherHome.y, 0):Length()
 	if away > rig.stride * 0.5 and away >= otherAway then
-		local to = home + f * (rig.stride * 0.45 * h.moving)
-		foot.from, foot.to, foot.start = foot.at, Floor(to, rig.leg * 2) or to, now
+		local vel = h.vel or vector_origin
+		local speed = vel:Length()
+		local time, to = STEP_TIME, home
+		if speed > 1 then
+			local dir = vel / speed
+			speed = math.min(speed, SPEED * LUNGE)
+			time = math.Clamp(rig.stride / speed, STEP_FAST, STEP_TIME)
+			to = home + dir * (speed * time + rig.stride * 0.5)
+		end
+		foot.from, foot.to, foot.start, foot.time = foot.at, Floor(to, rig.leg * 2) or to, now, time
 	end
 	return foot.at
 end
@@ -495,8 +504,8 @@ local function Steer(h, goal, speed, now, dt)
 	end
 	local ground = Floor(Vector(root.x, root.y, actual.z), 512)
 	if ground then root.z = ground.z end
+	h.vel = Vector(root.x - h.root.x, root.y - h.root.y, 0) / math.max(dt, 0.001)
 	h.root = root
-	h.moving = moving and 1 or 0
 	h.phase = h.phase + step / math.max(1, rig.stride) * math.pi
 end
 
@@ -794,7 +803,7 @@ function Hosts.Rise(s, tether)
 	local h = {
 		rag = rag, rig = rig, health = HEALTH, seed = math.Rand(0, 100),
 		fungus = colony, mind = colony and colony.Mind, creator = colony and colony:GetCreator() or nil,
-		state = "rise", stateAt = now, phase = 0, moving = 0,
+		state = "rise", stateAt = now, phase = 0,
 		dies = now + EvilFungus.Setting("host_time") / EvilFungus.TimeScale(),
 		nextScan = 0, nextShed = now + math.Rand(SHED[1], SHED[2]), nextGroan = now + math.Rand(GROAN[1], GROAN[2]),
 		tether = tether, bound = tether ~= nil,
