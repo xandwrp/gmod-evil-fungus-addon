@@ -18,8 +18,25 @@ if not file.Exists("evil_api/init.lua", "LUA") then
 	end)
 	if SERVER then return end
 
+	local function Fix()
+		if not game.SinglePlayer() and not LocalPlayer():IsListenServerHost() then return end
+		for _, addon in ipairs(engine.GetAddons()) do
+			if tostring(addon.wsid) == API then
+				if not addon.downloaded then return "Steam is still downloading it, restart the game once it's done." end
+				if not addon.mounted then return "It's turned off, turn it on in the Addons menu, then restart the game." end
+				return "It's installed but didn't load. Unsubscribe and subscribe to it again, then restart the game."
+			end
+		end
+		return "Subscribe to it, then restart the game."
+	end
+
 	hook.Add("InitPostEntity", "EvilNeedsAPI", function()
-		chat.AddText(RED, Needs() .. " Subscribe to it, then restart the game.")
+		local fix = Fix()
+		if not fix then
+			chat.AddText(RED, Needs() .. " This server doesn't have it, the server owner needs to add it to the server's workshop collection.")
+			return
+		end
+		chat.AddText(RED, Needs() .. " " .. fix)
 
 		local frame = vgui.Create("DFrame")
 		frame:SetTitle("Syhgma's Evil API")
@@ -43,7 +60,7 @@ if not file.Exists("evil_api/init.lua", "LUA") then
 		text:Dock(FILL)
 		text:DockMargin(4, 4, 4, 8)
 		text:SetWrap(true)
-		text:SetText(Needs() .. " Subscribe to it, then restart the game.")
+		text:SetText(Needs() .. " " .. fix)
 	end)
 	return
 end
