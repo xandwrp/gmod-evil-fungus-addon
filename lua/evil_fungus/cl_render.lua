@@ -608,10 +608,10 @@ local nextPick, baked = 0, -1
 
 -- The body is the only part that moves. Each cell is rebuilt to pulse every so often, nearer ones more often,
 -- stalest first and only for so long a frame.
-local function DrawBody(eye)
+local function DrawBody(eye, main)
 	local M = EvilFungus.Client
 	local frame = FrameNumber()
-	if baked ~= frame then
+	if main and baked ~= frame then
 		baked = frame
 		local now = RealTime()
 		if now >= nextPick then
@@ -687,12 +687,13 @@ end
 function EvilFungus.DrawPass(name, draw)
 	local drawn
 	local function Run(depth, sky, sky3d)
-		if not EvilFungus.MainView(depth, sky, sky3d) then return end
+		if depth or sky3d then return end
+		local main = EvilFungus.MainView(depth, sky, sky3d)
 		drawn = FrameNumber()
 		Clean()
 		local clip = not render.GetRenderTarget() and render.EnableClipping(false)
 		cam.PushModelMatrix(IDENTITY)
-		local ok, err = pcall(draw)
+		local ok, err = pcall(draw, main)
 		cam.PopModelMatrix()
 		if clip then render.EnableClipping(true) end
 		if not ok then ErrorNoHalt("Evil Fungus couldn't draw: ", err, "\n") end
@@ -714,29 +715,30 @@ end
 
 local rebuilt, eye = -1, Vector()
 
-EvilFungus.DrawPass("EvilFungusRender", function()
+EvilFungus.DrawPass("EvilFungusRender", function(main)
 	local t = SysTime()
 	local frame = FrameNumber()
 	local fresh = view.frame == frame and view.origin
-	if rebuilt ~= frame and (fresh or not render.GetRenderTarget() or frame - rebuilt > STALE_FRAMES) then
+	if main and rebuilt ~= frame and (fresh or not render.GetRenderTarget() or frame - rebuilt > STALE_FRAMES) then
 		rebuilt, eye = frame, fresh and Vector(fresh) or EyePos()
 		Show()
 		Rebuild()
 		t = EvilFungus.Measure("rebuild", t)
 	end
+	local from = main and eye or EyePos()
 
 	local r = DRAW_RANGE + 128
 	local r2 = r * r
 	render.SetMaterial(MAT)
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
-		if chunk.mesh and chunk.center:DistToSqr(eye) < (chunk.cull or r2) then chunk.mesh:Draw() end
+		if chunk.mesh and chunk.center:DistToSqr(from) < (chunk.cull or r2) then chunk.mesh:Draw() end
 	end
 	render.SetMaterial(WEB)
 	for _, chunk in pairs(EvilFungus.Client.chunks) do
-		if chunk.webMesh and chunk.center:DistToSqr(eye) < (chunk.cull or r2) then chunk.webMesh:Draw() end
+		if chunk.webMesh and chunk.center:DistToSqr(from) < (chunk.cull or r2) then chunk.webMesh:Draw() end
 	end
 	t = EvilFungus.Measure("chunks", t)
-	DrawBody(eye)
+	DrawBody(from, main)
 	EvilFungus.Measure("body", t)
 end)
 
