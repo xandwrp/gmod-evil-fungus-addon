@@ -441,7 +441,8 @@ EvilFungus.DrawPass("EvilFungusSleepers", function()
 				local close = d2 < FIBER_RANGE * FIBER_RANGE
 
 				if stage == KEPT then
-					local growing = rag:GetNW2Float(EvilFungus.CONSUMED_VAR, 0) < 1 or t < WIRE_GROW + 1
+					local consumed = rag:GetNW2Float(EvilFungus.CONSUMED_VAR, 0)
+					local growing = consumed < 1 or (rag.EvilFungusBakedK or 0) < 1 or t < WIRE_GROW + 1
 					if not rag.EvilFungusMesh or growing and clock - (rag.EvilFungusBakedAt or 0) > REBUILD then
 						local static = {}
 						Limbs(static, rag, c, up, light, S)
@@ -449,6 +450,7 @@ EvilFungus.DrawPass("EvilFungusSleepers", function()
 						Fibers(static, rag, c, nest, up, t, now, light)
 						Bake(rag, static, S)
 						rag.EvilFungusBakedAt = clock
+						rag.EvilFungusBakedK = consumed
 					end
 					if rag.EvilFungusMesh then rag.EvilFungusMesh:Draw() end
 					Vein(shapes, rag, c, nest, up, now, light, S)
