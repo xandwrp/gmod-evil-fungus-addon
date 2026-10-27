@@ -21,11 +21,14 @@ local IGNITE_SOUND = "ambient/fire/ignite.wav"
 local FLAME_PAD = 16
 local FLAME_MAX = 128
 local SOURCES = { env_fire = 48, env_flare = 16 }
-local KINDS = { "*fire*", "*flame*", "*flare*", "*napalm*" }
+local KINDS = { "fire", "flame", "flare", "napalm" }
 local NOT_FIRE = { entityflame = true, env_firesensor = true, env_firesource = true, env_lensflare = true }
 local BOLT_CUT = 32
 local BOLT_HEAT = 56
 local BOLT_ARM = 0.05
+local FIRE_DAMAGE = bit.bor(DMG_BURN, DMG_SLOWBURN, DMG_PLASMA)
+local BURN_REACH = 48
+local BURN_GAP = 0.1
 local BODY_REACH = 24
 local FEAR_PAD = 96
 local RETREAT_MAX = 12
@@ -162,6 +165,28 @@ local function Retreat()
 	end
 end
 
+local flames = {}
+
+local function Fiery(class)
+	class = string.lower(class)
+	for _, kind in ipairs(KINDS) do
+		if string.find(class, kind, 1, true) then return true end
+	end
+	return false
+end
+
+hook.Add("OnEntityCreated", "EvilFungusFire", function(ent)
+	if Fiery(ent:GetClass()) then flames[ent] = true end
+end)
+
+hook.Add("EntityRemoved", "EvilFungusFire", function(ent)
+	flames[ent] = nil
+end)
+
+for _, ent in ipairs(ents.GetAll()) do
+	if Fiery(ent:GetClass()) then flames[ent] = true end
+end
+
 local function Burning(ent)
 	local class = ent:GetClass()
 	if NOT_FIRE[class] or string.StartWith(class, "evil_") then return false end
@@ -182,13 +207,11 @@ local function Scan(now)
 			fires[#fires + 1] = { flame:GetPos(), FLAME_PAD * 2 }
 		end
 	end
-	local seen = {}
-	for _, kind in ipairs(KINDS) do
-		for _, fire in ipairs(ents.FindByClass(kind)) do
-			if not seen[fire] and Burning(fire) then
-				seen[fire] = true
-				fires[#fires + 1] = { fire:GetPos(), SOURCES[fire:GetClass()] or math.Clamp(fire:BoundingRadius() + FLAME_PAD, FLAME_PAD, FLAME_MAX) }
-			end
+	for fire in pairs(flames) do
+		if not IsValid(fire) then
+			flames[fire] = nil
+		elseif Burning(fire) then
+			fires[#fires + 1] = { fire:GetPos(), SOURCES[fire:GetClass()] or math.Clamp(fire:BoundingRadius() + FLAME_PAD, FLAME_PAD, FLAME_MAX) }
 		end
 	end
 	for _, f in ipairs(fires) do
@@ -320,13 +343,26 @@ hook.Add("OnEntityCreated", "EvilFungusHarm", function(ent)
 	end)
 end)
 
+local lastBurn, lastBurnAt = nil, -math.huge
+
+local function Scald(pos)
+	local now = CurTime()
+	if lastBurn and now - lastBurnAt < BURN_GAP and lastBurn:DistToSqr(pos) < BURN_REACH * BURN_REACH then return end
+	lastBurn, lastBurnAt = pos, now
+	Catch(pos, BURN_REACH, now)
+end
+
 hook.Add("EntityTakeDamage", "EvilFungusHarm", function(_, dmg)
-	if not dmg:IsExplosionDamage() or not next(EvilFungus.Colonies or {}) then return end
-	local inflictor = dmg:GetInflictor()
-	if IsValid(inflictor) and inflictor:GetClass() == "env_explosion" then return end
+	if not next(EvilFungus.Colonies or {}) then return end
 	local pos = dmg:GetDamagePosition()
 	if pos:IsZero() then return end
-	Harm.Blast(pos, BLAST_MAGNITUDE * 2.5)
+	if dmg:IsExplosionDamage() then
+		local inflictor = dmg:GetInflictor()
+		if IsValid(inflictor) and inflictor:GetClass() == "env_explosion" then return end
+		Harm.Blast(pos, BLAST_MAGNITUDE * 2.5)
+	elseif bit.band(dmg:GetDamageType(), FIRE_DAMAGE) ~= 0 then
+		Scald(pos)
+	end
 end)
 
 local bolts = {}
