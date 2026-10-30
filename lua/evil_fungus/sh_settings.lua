@@ -52,7 +52,7 @@ EvilFungus.SETTINGS = {
 	{ name = "carried", default = 1, min = 0, max = 10, decimals = 2, label = "Carried spores", needs = "EvilCrawler",
 		help = "How easily Evil Crawlers walking through the mat pick up spores, and how often they shake one off somewhere else. At 0 they never carry any" },
 	{ name = "shrink", default = 1, min = 0, max = 1, label = "Shrinks bodies",
-		help = "Bodies it's consuming shrink away into it. At 0 they keep their size and just go pale" },
+		help = "Bodies it's consuming shrink away into it. At 0 they keep their size and only darken a little under its strands" },
 	{ name = "color", default = 16777215, min = 0, max = 16777215, color = true, keep = true, label = "Colour",
 		help = "Tints the whole fungus. White keeps its own colours" },
 	{ name = "pulse_speed", default = 1, min = 0, max = 5, decimals = 2, label = "Pulse speed",
