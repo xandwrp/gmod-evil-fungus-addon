@@ -18,7 +18,6 @@ local FLESH = Skin("evil_fungus_flesh", "evil_fungus/flesh", "[.75 .7 .72]")
 local LEVELS = 15
 local SEGMENTS = 2
 local ROOT_SIDES = 4
-local BODY_SIDES = 6
 local R_THIN, R_THICK = 0.5, 3.2
 local TAPER = 0.7
 local LIFT = 0.45
