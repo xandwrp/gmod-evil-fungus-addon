@@ -50,7 +50,7 @@ EvilFungus.SETTINGS = {
 	{ name = "spores", default = 1, min = 0, max = 10, decimals = 2, label = "Spores",
 		help = "How often a well-fed fungus throws spores that start new patches nearby. At 0 it never does" },
 	{ name = "carried", default = 1, min = 0, max = 10, decimals = 2, label = "Carried spores", needs = "EvilCrawler",
-		help = "How easily Evil Crawlers walking through the mat pick up spores, and how often they shake one off somewhere else. At 0 they never carry any" },
+		help = "How easily Evil Crawlers walking through a well-fed mat pick up spores, and how often they shake one off somewhere else. A starving mat has none to give. At 0 they never carry any" },
 	{ name = "shrink", default = 1, min = 0, max = 1, label = "Shrinks bodies",
 		help = "Bodies it's consuming shrink away into it. At 0 they keep their size and only darken a little under its strands" },
 	{ name = "color", default = 16777215, min = 0, max = 16777215, color = true, keep = true, label = "Colour",
