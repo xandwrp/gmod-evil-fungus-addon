@@ -62,7 +62,7 @@ local WEB = CreateMaterial("evil_fungus_web", "UnlitGeneric", {
 })
 
 local COST_SMOOTH = 0.05
-local cv_cost = CreateClientConVar("evil_fungus_cost", "0", true, false, "Show how many milliseconds a frame the fungus takes to draw")
+local cv_cost = CreateClientConVar("evil_fungus_cost", "0", false, false, "Show how many milliseconds a frame the fungus takes to draw")
 
 EvilFungus.Cost = EvilFungus.Cost or {}
 
