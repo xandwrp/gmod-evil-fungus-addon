@@ -978,6 +978,7 @@ concommand.Add("evil_fungus_clear", function(ply)
 	end
 	for _, colony in ipairs(list) do colony:Remove() end
 	if EvilFungus.Hosts then EvilFungus.Hosts.Clear() end
+	hook.Run("EvilFungusCleared")
 end, nil, "Remove every patch of fungus on the map")
 
 -- Takes that much body out of the mat, evenly from everywhere it has any.
