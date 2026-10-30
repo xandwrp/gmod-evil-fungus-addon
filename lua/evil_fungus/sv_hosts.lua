@@ -746,12 +746,17 @@ local function Writhe(h, now, dt)
 	if now - h.stateAt >= WRITHE_TIME / EvilFungus.TimeScale() then Burst(h) end
 end
 
+local function Drowned(h)
+	return bit.band(util.PointContents(h.root + vector_up * h.rig.stand), WATER) ~= 0
+end
+
 local function Run(h, now, dt)
 	if now >= h.nextGroan then
 		h.nextGroan = now + math.Rand(GROAN[1], GROAN[2])
 		h.rag:EmitSound(string.format(GROAN_SOUND, math.random(1, 2)), 65, math.random(70, 90))
 	end
 	local state = h.state
+	if (state == "walk" or state == "climb") and Drowned(h) then return Collapse(h) end
 	if state == "rise" then
 		local k = math.Clamp((now - h.stateAt) / RISE_TIME, 0, 1)
 		Stance(h, now, dt, k * k * (3 - 2 * k))
