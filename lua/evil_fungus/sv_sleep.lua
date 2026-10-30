@@ -606,6 +606,7 @@ local function Digest(s, now)
 	end
 	if k >= 1 then
 		s.done = true
+		local fungus = s.fungus
 		if IsValid(fungus) then
 			fungus.Mind:Keep(s.brain)
 			if s.profile then fungus.Mind:Learn(s.profile) end
