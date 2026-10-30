@@ -856,7 +856,8 @@ hook.Add("EntityTakeDamage", "EvilFungusHosts", function(ent, dmg)
 	local h = list[ent]
 	if not h then return end
 	local attacker = dmg:GetAttacker()
-	if dmg:IsDamageType(DMG_CRUSH) and (not IsValid(attacker) or attacker == ent or attacker:IsWorld()) then return end
+	if dmg:IsDamageType(DMG_CRUSH) and not (IsValid(attacker) and attacker ~= ent
+		and (attacker:IsPlayer() or attacker:IsNPC() or attacker:IsNextBot())) then return end
 	local amount = dmg:GetDamage()
 	if dmg:IsExplosionDamage() then
 		amount = amount * BLAST_DAMAGE
