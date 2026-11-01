@@ -49,6 +49,11 @@ local DETOUR_TIME = 1.5
 local STUCK_TIME = 2
 local STUCK_MOVE = 12
 local ARRIVED = 24
+local STEP_UP = 24
+local STEP_DOWN = 1.5
+local FALL_MIN = 0.4
+local FALL_REST = 30
+local FALL_GIVE_UP = 8
 
 local SCAN = 0.5
 local SIGHT = 1600
@@ -204,6 +209,14 @@ end
 local function Floor(pos, depth)
 	local tr = util.TraceLine({ start = pos + vector_up * 24, endpos = pos - vector_up * depth, filter = Solid, mask = MASK_SOLID })
 	if tr.Hit and not tr.StartSolid then return tr.HitPos, tr.HitNormal end
+end
+
+local function Ground(h, x, y)
+	local z = h.root.z
+	for _, up in ipairs({ STEP_UP, 2 }) do
+		local tr = util.TraceLine({ start = Vector(x, y, z + up), endpos = Vector(x, y, z - h.rig.leg * STEP_DOWN), filter = Solid, mask = MASK_SOLID })
+		if not tr.StartSolid then return tr.Hit and tr.HitPos.z or false end
+	end
 end
 
 local function Count()
@@ -366,7 +379,7 @@ local function Facing(h)
 end
 
 local function Rouse(h, now)
-	h.limp = nil
+	h.limp, h.fall = nil, nil
 	if h.state == "hoist" or h.state == "writhe" then return end
 	if h.state ~= "rise" then h.resume = h.state end
 	h.yaw = Facing(h)
@@ -502,8 +515,16 @@ local function Steer(h, goal, speed, now, dt)
 			root = Vector(back.x, back.y, root.z)
 		end
 	end
-	local ground = Floor(Vector(root.x, root.y, actual.z), 512)
-	if ground then root.z = ground.z end
+	local ground = Ground(h, root.x, root.y)
+	if ground == false then
+		if h.haul then Release(h) end
+		h.fall, h.grabbing = now, nil
+		return
+	elseif ground then
+		root.z = ground
+	else
+		root = Vector(h.root.x, h.root.y, h.root.z)
+	end
 	h.vel = Vector(root.x - h.root.x, root.y - h.root.y, 0) / math.max(dt, 0.001)
 	h.root = root
 	h.phase = h.phase + step / math.max(1, rig.stride) * math.pi
@@ -707,6 +728,7 @@ local function Walk(h, now, dt)
 	end
 
 	Steer(h, h.goal, speed, now, dt)
+	if h.fall then return end
 	local f, r = Stance(h, now, dt, 1, reach, h.haul ~= nil)
 	if h.haul then Haul(h, f, r, dt) end
 	Shed(h, now)
@@ -746,6 +768,14 @@ local function Writhe(h, now, dt)
 	if now - h.stateAt >= WRITHE_TIME / EvilFungus.TimeScale() then Burst(h) end
 end
 
+local function Falling(h, now)
+	local t = now - h.fall
+	if t > FALL_GIVE_UP then return Collapse(h) end
+	local pelvis = Part(h, "pelvis")
+	if t < FALL_MIN or pelvis and pelvis:GetVelocity():Length() > FALL_REST then return end
+	Rouse(h, now)
+end
+
 local function Drowned(h)
 	return bit.band(util.PointContents(h.root + vector_up * h.rig.stand), WATER) ~= 0
 end
@@ -755,6 +785,7 @@ local function Run(h, now, dt)
 		h.nextGroan = now + math.Rand(GROAN[1], GROAN[2])
 		h.rag:EmitSound(string.format(GROAN_SOUND, math.random(1, 2)), 65, math.random(70, 90))
 	end
+	if h.fall then return Falling(h, now) end
 	local state = h.state
 	if (state == "walk" or state == "climb") and Drowned(h) then return Collapse(h) end
 	if state == "rise" then
@@ -768,6 +799,7 @@ local function Run(h, now, dt)
 		Walk(h, now, dt)
 	elseif state == "climb" then
 		Steer(h, h.base, SPEED, now, dt)
+		if h.fall then return end
 		Stance(h, now, dt, 1)
 		if Vector(h.base.x - h.root.x, h.base.y - h.root.y, 0):Length() < ARRIVED or now - h.stateAt > CLIMB_TIME then
 			h.state, h.stateAt = "hoist", now
