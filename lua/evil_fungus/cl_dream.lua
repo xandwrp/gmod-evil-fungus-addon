@@ -3,6 +3,7 @@ local SETTLE = 4
 local FADE_IN = 3
 
 local shown, dreamStart = 0, nil
+local View = Evil and Evil.View or function(name, _, calc) hook.Add("CalcView", name, calc) end
 
 hook.Add("RenderScreenspaceEffects", "EvilFungusDream", function()
 	local ply = LocalPlayer()
@@ -54,8 +55,12 @@ local function Sway(k, t)
 end
 
 -- Watching yourself sleep from somewhere just above, and not quite steady.
-hook.Add("CalcView", "EvilFungusDream", function(ply, origin, angles, fov)
-	if ply:Alive() or not ply:GetNW2Bool(EvilFungus.ASLEEP_VAR, false) then return end
+local function Dreaming(ply)
+	return not ply:Alive() and ply:GetNW2Bool(EvilFungus.ASLEEP_VAR, false)
+end
+
+View("EvilFungusDream", Dreaming, function(ply, origin, angles, fov)
+	if not Dreaming(ply) then return end
 	local t = RealTime()
 	return {
 		origin = origin,
