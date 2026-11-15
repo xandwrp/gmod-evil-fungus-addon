@@ -298,6 +298,21 @@ function Mat:Grow(from, dir, now, spacing)
 	return node
 end
 
+-- Straight to a spot already known to be on a surface and in view, without stepping there.
+function Mat:Leap(from, pos, normal, now)
+	if self:Crowded(pos, normal) then return end
+	if bit.band(util.PointContents(pos + normal * 2), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
+	local node = self:Add(pos, normal)
+	self:Link(from, node, now)
+	self:Near(pos, FUSE, function(other)
+		if other ~= node and other ~= from and Mat.Facing(node, other) and not self:Linked(node, other)
+			and math.random() < FUSE_CHANCE and Mat.Reaches(node, other) then
+			self:Link(node, other, now)
+		end
+	end)
+	return node
+end
+
 -- Straight out into open air, held up by nothing but the strand behind it.
 function Mat:Rise(from, dir, now)
 	local start = from.air and from.pos or from.pos + from.normal * LIFT

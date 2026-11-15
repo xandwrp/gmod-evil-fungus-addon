@@ -67,6 +67,7 @@ function ENT:DebugDraw(now)
 		if Seen(s.pos) then debugoverlay.Cross(s.pos + Vector(0, 0, LIFT), 6, life, SCENT, true) end
 	end
 
+	self:DebugNav(life)
 	if self.Goal and not self.Goal.dead then debugoverlay.Cross(self.Goal.pos, 16, life, GOAL, true) end
 	if self.Target then debugoverlay.Cross(self.Target, 10, life, TARGET, true) end
 	for i = 2, #(self.Parts or {}) do
@@ -81,8 +82,10 @@ function ENT:DebugDraw(now)
 	local air = 0
 	for _ in pairs(mat.air) do air = air + 1 end
 	debugoverlay.EntityTextAtPosition(at, 0, ("%s  body %d  parts %d  mat %d  settled %d  air %d  tunnel %.2f"):format(state, self.Body, #(self.Parts or {}), mat.count, mat.settledCount or 0, air, self.Tunnel or 0), life, TARGET)
-	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  settle %.2f  feel %.2f"):format(
-		r.decide or 0, r.flow or 0, r.grow or 0, r.settle or 0, r.feel or 0), life, TARGET)
+	debugoverlay.EntityTextAtPosition(at, 1, ("ms/s  decide %.2f  flow %.2f  grow %.2f  nav %.2f  settle %.2f  feel %.2f"):format(
+		r.decide or 0, r.flow or 0, r.grow or 0, r.nav or 0, r.settle or 0, r.feel or 0), life, TARGET)
+	local nav = self.Plan and ("searching %d"):format(self.Plan.expanded) or self.Route and ("route %d/%d%s"):format(self.Route.i, #self.Route.points, self.Route.partial and " partial" or "") or "greedy"
+	debugoverlay.EntityTextAtPosition(at, 4, "nav  " .. nav, life, TARGET)
 	local mind = self.Mind
 	debugoverlay.EntityTextAtPosition(at, 2, ("mind %.2f  kept %.2f  wired %.2f"):format(mind:Level(), mind.kept, mind.wired), life, TARGET)
 	local knows = {}

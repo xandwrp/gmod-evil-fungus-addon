@@ -298,6 +298,7 @@ function ENT:Smell(now)
 		if IsValid(ent) then Sniff(ent) end
 	end
 	if busy or not best then return end
+	if best ~= prey and IsValid(prey) and self:PreyLocked(now) then return end
 
 	if best ~= prey then self.NextDecide = 0 end
 	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt, self.Smelled = best, bestNode, nil, now, best
@@ -441,6 +442,7 @@ function ENT:Felt(ent, node, now, from)
 	local prey = self.Prey
 	if IsValid(prey) and prey ~= ent then
 		if self.Eating then return end
+		if self:PreyLocked(now) and not self:Touches(ent) then return end
 		-- Whoever's on it or on the air beats a rumble from somewhere off the mat.
 		if from and (self:Touches(prey) or self.Smelled == prey) then return end
 	end
