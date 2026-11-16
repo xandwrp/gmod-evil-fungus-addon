@@ -166,7 +166,7 @@ end
 
 function ENT:StartPlan(target, now)
 	local heap, seen = {}, {}
-	local plan = { heap = heap, seen = seen, target = Vector(target.x, target.y, target.z), expanded = 0, started = now }
+	local plan = { heap = heap, seen = seen, target = Vector(target.x, target.y, target.z), expanded = 0 }
 	for _, node in ipairs(Seeds(self:Connected(now), target)) do
 		local p = { pos = node.pos, normal = node.normal, g = 0 }
 		p.h = node.pos:Distance(target)
