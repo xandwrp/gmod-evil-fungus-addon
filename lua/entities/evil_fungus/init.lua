@@ -889,16 +889,20 @@ function ENT:Spread(dt, now)
 		self.ReachTurn = self.ReachTurn % #targets + 1
 		local t = targets[self.ReachTurn]
 		if not frontier or t.best and not Frontier(t.best) then Scan() end
-		local best, target, tunnel = t.best, t.pos, t.tunnel
-		if best and t.d2 > ARRIVE * ARRIVE then
+		local best, target, tunnel, d2 = t.best, t.pos, t.tunnel, t.d2
+		local routed = t == targets[1] and self.Route and self:RouteFrom(now)
+		if routed then best, d2 = routed, routed.pos:DistToSqr(target) end
+		if best and d2 > ARRIVE * ARRIVE then
 			-- Going up after something in the air, it heads straight out through it, and climbs whatever's in the way.
 			local rise = tunnel > 0 and (best.air or math.random() < tunnel)
 			local jitter = REACH_JITTER * (0.5 + 0.5 * sprawl) * (rise and RISE_JITTER or 1)
 			-- On a route the points are close together and the wander would only pull it off them.
 			if t == targets[1] and self.Route then jitter = jitter * ROUTE_JITTER end
 			local dir = (target - best.pos):GetNormalized() + VectorRand() * jitter
-			if not (rise and self:Sprout(best, dir, now, nil, nil, true)) and not self.Absorbed then self:Sprout(best, dir, now) end
+			local grown = rise and self:Sprout(best, dir, now, nil, nil, true)
+			if not grown and not self.Absorbed then grown = self:Sprout(best, dir, now) end
 			if self.Absorbed then return end
+			if routed then self:RouteStep(routed, grown, now) end
 		end
 	end
 
@@ -1068,7 +1072,7 @@ end
 function ENT:OnRemove()
 	EvilFungus.Colonies[self] = nil
 	if not self.Absorbed and self.Mat and EvilFungus.Net then
-		for _, node in pairs(self.Mat.nodes) do EvilFungus.Net.Drop(node) end
+		self.Mat:Forget()
 	end
 	if not self.Absorbed then
 		for rag in pairs(self.Claimed or {}) do

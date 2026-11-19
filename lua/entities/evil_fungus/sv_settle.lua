@@ -8,9 +8,22 @@ local WAKE_RADIUS = 128
 local FOOD_WAKE = 64
 local KEEP_CLEAR = 96
 local ROUSE_INTERVAL = 0.1
-local UNFOLDS = 16
 local FLAT = 16
 local BOX_PAD = Vector(256, 256, 256)
+-- Settled mat keeps its strands asleep (still drawn, left out of every calculation) until the client is
+-- drawing this many times the mat size. Past that, settling throws the strands away for a plain patch.
+local DRAWN = 4
+-- Around the stretch of route being grown along. A route that starts on (or runs over) settled mat can't
+-- be grown along or counted as reached, since the patches cover the spots the points sit on.
+local ROUTE_WAKE = 64
+-- Settled patches in a straight line on the same flat surface merge into runs of up to this many, and at
+-- most so many runs are made a pass.
+local RUN_MAX = 8
+local RUNS = { 8, 64 }
+local RUN_FLAT = 12
+local RUN_FACING = 0.95
+-- Which two axes lie along a surface facing each way (Mat.Bucket: up, down, +x, -x, +y, -y).
+local ALONG = { [0] = { 1, 2 }, [1] = { 1, 2 }, [2] = { 2, 3 }, [3] = { 2, 3 }, [4] = { 1, 3 }, [5] = { 1, 3 } }
 
 function ENT:Stirring()
 	local list = {}
@@ -23,10 +36,14 @@ function ENT:Stirring()
 	for ent in pairs(EvilFungus.Foods) do
 		if IsValid(ent) then list[#list + 1] = { ent:GetPos(), FOOD_WAKE } end
 	end
-	for rag in pairs(self.Claimed) do
-		if IsValid(rag) then list[#list + 1] = { rag:GetPos(), WAKE_RADIUS } end
-	end
 	for _, crawler in ipairs(ents.FindByClass("evil_crawler")) do list[#list + 1] = { crawler:GetPos(), WAKE_RADIUS } end
+	local route = self.Route
+	if route then
+		for j = math.max(1, route.i - 1), math.min(#route.points, route.i + 1) do
+			list[#list + 1] = { route.points[j].pos, ROUTE_WAKE }
+		end
+		if route.from and not route.from.dead then list[#list + 1] = { route.from.pos, ROUTE_WAKE } end
+	end
 	return list
 end
 
@@ -66,17 +83,6 @@ function ENT:Settling(now)
 	self.NextFold = now + Lerp(hurt, FOLD_INTERVAL[1], FOLD_INTERVAL[2])
 	local age, most = AGE * (1 - hurt), math.Round(Lerp(hurt, FOLDS[1], FOLDS[2]))
 	local mat = self.Mat
-	if EvilFungus.Setting("settle") <= 0 and hurt <= 0 then
-		if not next(mat.settled) then return end
-		local list = {}
-		for node in pairs(mat.settled) do
-			if not node.burn then list[#list + 1] = node end
-			if #list >= UNFOLDS then break end
-		end
-		for _, node in ipairs(list) do mat:Unfold(node, now) end
-		return
-	end
-
 	local groups, blocked = {}, {}
 	for _, node in pairs(mat.nodes) do
 		local cell = Mat.FeltCell(node.x, node.y, node.z)
@@ -99,6 +105,8 @@ function ENT:Settling(now)
 
 	local stirring = self:Stirring()
 	local folds = 0
+	local Net = EvilFungus.Net
+	local keep = Net and Net.count < DRAWN * EvilFungus.Setting("max_nodes")
 	for key, g in pairs(groups) do
 		if not blocked[key] then
 			local first = g.list[1]
@@ -111,11 +119,84 @@ function ENT:Settling(now)
 				end
 			end
 			if clear then
-				self:Opened(mat:Fold(Flat(g.list), g.cell, now))
+				self:Opened(mat:Fold(Flat(g.list), g.cell, now, keep))
 				folds = folds + 1
 				if folds >= most then break end
 			end
 		end
 	end
 	if folds > 0 then self.GoalStale = true end
+	self:Merging(now, stirring, age, math.Round(Lerp(hurt, RUNS[1], RUNS[2])))
+end
+
+local function GridKey(bucket, c)
+	return ((c[1] + 512) * 1048576 + (c[2] + 512) * 1024 + (c[3] + 512)) * 8 + bucket
+end
+
+local function Lined(a, b)
+	return a.normal:Dot(b.normal) > RUN_FACING and math.abs((b.pos - a.pos):Dot(a.normal)) <= RUN_FLAT and Mat.Reaches(a, b)
+end
+
+-- Straight runs of settled patches, side by side on the same flat face, fold into one run each.
+function ENT:Merging(now, stirring, age, most)
+	local mat = self.Mat
+	local at, grid = {}, {}
+	for node in pairs(mat.settled) do
+		if node.sleepers and not node.run and not node.burn and not node.heat and not mat.woven[node]
+			and now - (node.born or 0) > age and node ~= self.Goal and node ~= self.PreyNode and not (self.Sources and self.Sources[node]) then
+			local clear = true
+			for _, s in ipairs(stirring) do
+				local r = s[2] + KEEP_CLEAR + Mat.FELT
+				if s[1]:DistToSqr(node.pos) < r * r then
+					clear = false
+					break
+				end
+			end
+			if clear then
+				local c = { math.floor(node.x / Mat.FELT), math.floor(node.y / Mat.FELT), math.floor(node.z / Mat.FELT) }
+				local key = GridKey(node.bucket, c)
+				if not grid[key] then
+					grid[key], at[node] = node, c
+				end
+			end
+		end
+	end
+	if not next(at) then return end
+
+	local function Next(node, axis, step)
+		local c = at[node]
+		local n = { c[1], c[2], c[3] }
+		n[axis] = n[axis] + step
+		return grid[GridKey(node.bucket, n)]
+	end
+
+	local used, made = {}, 0
+	for _, axis in ipairs({ 1, 2, 3 }) do
+		for node in pairs(at) do
+			local along = ALONG[node.bucket]
+			if not used[node] and (along[1] == axis or along[2] == axis) then
+				local prev = Next(node, axis, -1)
+				-- Only start from the front end of a line, so each line is taken in one go.
+				if not (prev and not used[prev] and Lined(prev, node)) then
+					local run, last = { node }, node
+					while #run < RUN_MAX do
+						local nxt = Next(last, axis, 1)
+						if not nxt or used[nxt] or not Lined(last, nxt) then break end
+						run[#run + 1], last = nxt, nxt
+					end
+					if #run >= 2 then
+						for _, p in ipairs(run) do used[p] = true end
+						local merged = mat:Fold(run, node.felt, now, true)
+						merged.run = true
+						made = made + 1
+						if made >= most then
+							self.GoalStale = true
+							return
+						end
+					end
+				end
+			end
+		end
+	end
+	if made > 0 then self.GoalStale = true end
 end

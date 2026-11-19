@@ -493,8 +493,11 @@ function ENT:Breathe(dt)
 		if not IsValid(rag) then
 			self.Claimed[rag] = nil
 		elseif not (s and s.corpse) then
+			-- Settled mat round them stays settled; what they give goes into the patch they're lying on.
 			local w = EvilFungus.Sleep.wired[rag]
-			local node = w and w.fungus == self and not w.nest.dead and w.nest or mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
+			local pos = rag:GetPos()
+			local node = w and w.fungus == self and EvilFungus.Mat.Holder(w.nest)
+				or mat:Nearest(pos, SLEEPER_RADIUS) or mat:NearestPatch(pos, SLEEPER_RADIUS)
 			if node then mat:SetMass(node, node.m + BREATH_GAIN * dt) end
 		end
 	end

@@ -37,7 +37,7 @@ Mat.FUSE = FUSE
 
 function EvilFungus.NewMat()
 	return setmetatable({ nodes = {}, count = 0, cells = {}, full = {}, air = {}, burning = {}, woven = {}, wovenCount = 0,
-		settled = {}, settledCount = 0, felt = {}, nextId = 1 }, Mat)
+		settled = {}, settledCount = 0, felt = {}, sleeping = 0, nextId = 1 }, Mat)
 end
 
 local function Key(ix, iy, iz)
@@ -89,12 +89,41 @@ local function Unpack(node)
 	node.up = node.normal.z
 end
 
-function Mat:Add(pos, normal, height)
-	local node = { pos = pos, normal = normal, m = 0, edges = {}, air = height and true or nil, height = height or 0, born = CurTime() }
+-- A hidden strand is server-only: the client never hears about it or any link to it.
+function Mat:Add(pos, normal, height, hidden)
+	local node = { pos = pos, normal = normal, m = 0, edges = {}, air = height and true or nil, height = height or 0, born = CurTime(), hidden = hidden or nil }
 	Unpack(node)
 	Place(self, node)
-	if EvilFungus.Net then EvilFungus.Net.Node(node) end
+	if EvilFungus.Net and not hidden then EvilFungus.Net.Node(node) end
 	return node
+end
+
+-- Takes a strand out of everything the mat works over, without telling the client it's gone.
+local function Unplace(self, node)
+	local cell = self.cells[node.cell]
+	if cell then
+		cell[node] = nil
+		if next(cell) == nil then self.cells[node.cell] = nil end
+	end
+	self.full[node], self.air[node], self.burning[node] = nil, nil, nil
+	self.nodes[node.id] = nil
+	self.count = self.count - 1
+end
+
+local function Drop(list, item)
+	for i, x in ipairs(list) do
+		if x == item then
+			table.remove(list, i)
+			return
+		end
+	end
+end
+
+local function Has(list, item)
+	for _, x in ipairs(list) do
+		if x == item then return true end
+	end
+	return false
 end
 
 -- Takes over every strand of another mat, body and all, leaving it empty.
@@ -104,15 +133,55 @@ function Mat:Absorb(other)
 	for node in pairs(other.woven) do self.woven[node] = true end
 	self.wovenCount = self.wovenCount + other.wovenCount
 	self.settledCount = self.settledCount + other.settledCount
-	for node in pairs(other.settled) do
-		self.settled[node] = true
-		local set = self.felt[node.felt] or {}
-		set[node] = true
-		self.felt[node.felt] = set
+	self.sleeping = (self.sleeping or 0) + (other.sleeping or 0)
+	other.sleeping = 0
+	for node in pairs(other.settled) do self.settled[node] = true end
+	-- Every patch's cell, including patches asleep inside a run, which aren't counted as settled themselves.
+	for cell, set in pairs(other.felt) do
+		local mine = self.felt[cell] or {}
+		for node in pairs(set) do mine[node] = true end
+		self.felt[cell] = mine
 	end
 	other.nodes, other.cells, other.full, other.air, other.burning, other.count = {}, {}, {}, {}, {}, 0
 	other.woven, other.wovenCount, other.settled, other.settledCount, other.felt = {}, 0, {}, 0, {}
 	other.mins, other.maxs = nil, nil
+end
+
+-- Settled mat destroyed outright (rather than woken) takes everything sleeping under it with it: strands
+-- are dropped from the client, and patches asleep inside a run take their own strands too.
+local function Bury(self, node)
+	for _, s in ipairs(node.sleepers) do
+		s.asleep, s.patch = nil, nil
+		if s.sleepers then
+			local set = self.felt[s.felt]
+			if set then
+				set[s] = nil
+				if next(set) == nil then self.felt[s.felt] = nil end
+			end
+			Bury(self, s)
+		else
+			self.sleeping = self.sleeping - 1
+			if EvilFungus.Net then EvilFungus.Net.Drop(s) end
+		end
+	end
+	node.sleepers = nil
+end
+
+-- Tells the client the whole mat is gone: every strand it's drawing, awake or asleep under settled mat
+-- (and under patches asleep inside runs), since sleepers aren't in the mat's own list of strands.
+function Mat:Forget()
+	local Net = EvilFungus.Net
+	if not Net then return end
+	local function Under(node)
+		for _, s in ipairs(node.sleepers) do
+			if s.sleepers then Under(s) end
+			Net.Drop(s)
+		end
+	end
+	for _, node in pairs(self.nodes) do
+		if node.sleepers then Under(node) end
+		Net.Drop(node)
+	end
 end
 
 function Mat:Remove(node)
@@ -147,6 +216,7 @@ function Mat:Remove(node)
 	self.nodes[node.id] = nil
 	self.count = self.count - 1
 	node.dead = true
+	if node.sleepers and not node.waking then Bury(self, node) end
 end
 
 function Mat:Weave(node, catch)
@@ -171,7 +241,7 @@ function Mat:Link(a, b, now, D)
 	local e = { a = a, b = b, len = math.max(1, a.pos:Distance(b.pos)), D = D or D_FLOOR, t = now }
 	a.edges[#a.edges + 1] = e
 	b.edges[#b.edges + 1] = e
-	if EvilFungus.Net then EvilFungus.Net.Edge(e) end
+	if EvilFungus.Net and not (a.hidden or b.hidden) then EvilFungus.Net.Edge(e) end
 	return e
 end
 
@@ -334,7 +404,12 @@ local function Surface(start, normal, reach)
 	return tr.HitPos, tr.HitNormal
 end
 
-function Mat:Fold(list, cell, now)
+-- Folds quiet strands into one patch that stands in for them in everything the mat works out. The same
+-- goes one level up: a straight run of patches folds into one run, with the patches asleep inside it.
+-- With keep, the strands themselves are only put to sleep: the client goes on drawing them exactly as they
+-- were, and the patch standing in for them is hidden. Without it they're gone for good and the client gets
+-- the patch instead.
+function Mat:Fold(list, cell, now, keep)
 	local inside, m, cx, cy, cz, nx, ny, nz = {}, 0, 0, 0, 0, 0, 0, 0
 	for _, node in ipairs(list) do
 		inside[node] = true
@@ -362,9 +437,40 @@ function Mat:Fold(list, cell, now)
 			if not inside[other] then links[other] = math.max(links[other] or 0, self:Conductance(e, now)) end
 		end
 	end
-	for _, node in ipairs(list) do self:Remove(node) end
+	if keep then
+		-- Sleepers keep every link they had, the client keeps drawing them, and the awake strands round the
+		-- edge just stop seeing the links back in until they wake.
+		for _, node in ipairs(list) do
+			for _, e in ipairs(node.edges) do
+				local other = e.a == node and e.b or e.a
+				if not inside[other] then Drop(other.edges, e) end
+			end
+		end
+		local strands = 0
+		for _, node in ipairs(list) do
+			Unplace(self, node)
+			node.asleep, node.dead, node.m0 = true, true, node.m
+			node.m = 0
+			if node.felt then
+				-- A patch asleep in a run stays in its cell's lookup, so it still covers its ground and
+				-- still wakes when something comes near it, but it only counts once, as part of the run.
+				if self.settled[node] then
+					self.settled[node] = nil
+					self.settledCount = self.settledCount - 1
+				end
+			else
+				strands = strands + 1
+			end
+		end
+		self.sleeping = (self.sleeping or 0) + strands
+	else
+		for _, node in ipairs(list) do self:Remove(node) end
+	end
 
-	local felt = self:Felt(pos, normal, cell, n)
+	local felt = self:Felt(pos, normal, cell, n, keep and list or nil)
+	if keep then
+		for _, node in ipairs(list) do node.patch = felt end
+	end
 	self:SetMass(felt, m)
 	for other, D in pairs(links) do
 		if not other.dead then self:Link(felt, other, now, D) end
@@ -372,9 +478,25 @@ function Mat:Fold(list, cell, now)
 	return felt
 end
 
-function Mat:Felt(pos, normal, cell, folded)
-	local felt = self:Add(pos, normal)
-	felt.felt, felt.bucket, felt.folded = cell, Mat.Bucket(normal), folded
+-- What actually holds a strand's share of the body: the strand itself, or the patch it's asleep under.
+-- Nil once it's really gone.
+function Mat.Holder(node)
+	while node and node.dead do
+		node = node.asleep and node.patch or nil
+	end
+	return node
+end
+
+-- The nearest settled patch whose ground reaches within radius of a spot. A patch sits at the middle of its
+-- cell, so it's looked for half a cell further out.
+function Mat:NearestPatch(pos, radius, accept)
+	local node, d = self:Nearest(pos, radius + FELT_HALF, function(n) return n.felt and (not accept or accept(n)) end)
+	return node, d and math.max(0, d - FELT_HALF)
+end
+
+function Mat:Felt(pos, normal, cell, folded, sleepers)
+	local felt = self:Add(pos, normal, nil, sleepers ~= nil)
+	felt.felt, felt.bucket, felt.folded, felt.sleepers = cell, Mat.Bucket(normal), folded, sleepers
 	self.settled[felt] = true
 	self.settledCount = self.settledCount + 1
 	local set = self.felt[cell] or {}
@@ -421,7 +543,77 @@ local function Nearest(list, pos)
 	return best
 end
 
+-- Brings the strands under a hidden patch back exactly as they were, links and all. Nothing about them
+-- changed on the client, so there's nothing to send but whatever new links the patch picked up meanwhile.
+local function Rise(self, felt, now)
+	local sleepers, m = felt.sleepers, felt.m
+	local links = {}
+	for _, e in ipairs(felt.edges) do links[#links + 1] = { e.a == felt and e.b or e.a, self:Conductance(e, now) } end
+	felt.waking = true
+	self:Remove(felt)
+	felt.sleepers = nil
+
+	local mine, sum = {}, 0
+	for _, s in ipairs(sleepers) do
+		mine[s], sum = true, sum + (s.m0 or 0)
+	end
+	local strands = 0
+	for _, s in ipairs(sleepers) do
+		s.asleep, s.dead, s.patch = nil, nil, nil
+		Place(self, s)
+		if s.felt then
+			self.settled[s] = true
+			self.settledCount = self.settledCount + 1
+		else
+			strands = strands + 1
+		end
+	end
+	for _, s in ipairs(sleepers) do
+		for i = #s.edges, 1, -1 do
+			local e = s.edges[i]
+			local other = e.a == s and e.b or e.a
+			if other.dead and not other.asleep then
+				-- Its other end died while this lot slept; the client already lost the link with it.
+				table.remove(s.edges, i)
+				local Net = EvilFungus.Net
+				if Net and e.eid and Net.edges[e.eid] == e then Net.edges[e.eid], Net.dirty[e] = nil, nil end
+			elseif not Has(other.edges, e) then
+				other.edges[#other.edges + 1] = e
+			end
+		end
+	end
+	for _, s in ipairs(sleepers) do
+		self:SetMass(s, sum > 0 and m * (s.m0 or 0) / sum or m / #sleepers)
+		s.m0 = nil
+	end
+	-- Anything that grew onto the patch while it slept is joined to the nearest sleeper for real.
+	for _, link in ipairs(links) do
+		local other = link[1]
+		if not other.dead then
+			local joined = false
+			for _, e in ipairs(other.edges) do
+				if mine[e.a] or mine[e.b] then
+					joined = true
+					break
+				end
+			end
+			if not joined then self:Link(Nearest(sleepers, other.pos), other, now, link[2]) end
+		end
+	end
+	self.sleeping = self.sleeping - strands
+	return sleepers
+end
+
+-- Wakes whatever a patch is asleep inside, from the top down, so the patch itself is back in the mat.
+local function Rouse(self, node, now)
+	local holder = node.asleep and node.patch
+	if not holder then return end
+	Rouse(self, holder, now)
+	if not holder.dead then Rise(self, holder, now) end
+end
+
 function Mat:Unfold(felt, now)
+	if felt.sleepers then return Rise(self, felt, now) end
 	local pos, normal, m = felt.pos, felt.normal, felt.m
 	local links = {}
 	for _, e in ipairs(felt.edges) do links[#links + 1] = { e.a == felt and e.b or e.a, self:Conductance(e, now) } end
@@ -512,7 +704,10 @@ function Mat:Wake(pos, radius, now)
 		end
 	end
 	if not woke then return end
+	-- Only the patches actually in reach wake their strands. Waking one inside a run splits the run back into
+	-- its patches; the rest of them settle back into runs on their own.
 	for _, node in ipairs(woke) do
+		if node.asleep then Rouse(self, node, now) end
 		if not node.dead then self:Unfold(node, now) end
 	end
 	return true
@@ -586,6 +781,7 @@ for colony in pairs(EvilFungus.Colonies or {}) do
 	if mat and not mat.woven then mat.woven, mat.wovenCount = {}, 0 end
 	if mat and not mat.settled then mat.settled, mat.felt = {}, {} end
 	if mat and not mat.settledCount then mat.settledCount = table.Count(mat.settled) end
+	if mat and not mat.sleeping then mat.sleeping = 0 end
 	for _, node in pairs(mat and mat.nodes or {}) do
 		if not node.x then Unpack(node) end
 		node.height = node.height or 0
