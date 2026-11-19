@@ -504,7 +504,10 @@ local function Contact(rag)
 			for i = 0, rag:GetPhysicsObjectCount() - 1 do
 				local phys = rag:GetPhysicsObjectNum(i)
 				if IsValid(phys) then
-					local node, d = mat:Nearest(phys:GetPos(), TOUCH_RADIUS)
+					local bone = phys:GetPos()
+					local node, d = mat:Nearest(bone, TOUCH_RADIUS)
+					-- Lying on settled mat still counts: the patch it's folded into stands in for the strands.
+					if not node then node, d = mat:NearestPatch(bone, TOUCH_RADIUS) end
 					if node and (not bestD or d < bestD) then best, bestD, owner = node, d, colony end
 				end
 			end
@@ -586,9 +589,10 @@ local function Wither(s)
 	s.rag:SetNW2Float(EvilFungus.CONSUMED_VAR, k)
 
 	local due = s.food * k
-	local fungus, nest = s.fungus, s.nest
-	if due > s.fed and IsValid(fungus) and nest and not nest.dead then
-		fungus.Mat:SetMass(nest, nest.m + due - s.fed)
+	-- A nest that has since settled feeds the patch it's asleep under.
+	local fungus, holder = s.fungus, EvilFungus.Mat.Holder(s.nest)
+	if due > s.fed and IsValid(fungus) and holder then
+		fungus.Mat:SetMass(holder, holder.m + due - s.fed)
 	end
 	s.fed = due
 	return k
@@ -621,6 +625,7 @@ local function Nest(at)
 		local mat = IsValid(colony) and not colony.Absorbed and colony.Mat
 		if mat and mat.mins and at:WithinAABox(mat.mins - pad, mat.maxs + pad) then
 			local node, d = mat:Nearest(at, WIRE_REACH, function(n) return not n.air and not n.burn end)
+			if not node then node, d = mat:NearestPatch(at, WIRE_REACH, function(n) return not n.burn end) end
 			if node and (not bestD or d < bestD) then best, bestD, owner = node, d, colony end
 		end
 	end
@@ -721,7 +726,7 @@ hook.Add("Think", "EvilFungusSleep", function()
 		for rag, w in pairs(Sleep.wired) do
 			if not IsValid(rag) then
 				Sleep.wired[rag] = nil
-			elseif not IsValid(w.fungus) or w.fungus.Absorbed or w.nest.dead or w.nest.burn then
+			elseif not IsValid(w.fungus) or w.fungus.Absorbed or not EvilFungus.Mat.Holder(w.nest) or w.nest.burn then
 				Rewire(rag, w)
 			end
 		end

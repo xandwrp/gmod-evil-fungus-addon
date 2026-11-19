@@ -17,7 +17,8 @@ local FLESH = Skin("evil_fungus_flesh", "evil_fungus/flesh", "[.75 .7 .72]")
 
 local LEVELS = 15
 local SEGMENTS = 2
-local ROOT_SIDES = 4
+-- Plain mat strands are three-sided: a flat face down on the surface and a ridge along the top.
+local ROOT_SIDES = 3
 local R_THIN, R_THICK = 0.5, 3.2
 local TAPER = 0.7
 local LIFT = 0.45
@@ -137,16 +138,20 @@ for _, rag in ipairs(ents.FindByClass("prop_ragdoll*")) do
 	end
 end
 
+-- Corners round a strand, starting half a side round from straight up unless ridged, which puts a corner
+-- straight up instead (and, for three sides, a flat face straight down).
 local trig = {}
-local function Trig(sides)
-	local t = trig[sides]
+local function Trig(sides, ridged)
+	local key = ridged and -sides or sides
+	local t = trig[key]
 	if not t then
 		t = { c = {}, s = {} }
+		local phase = ridged and 0 or 0.5
 		for k = 0, sides - 1 do
-			local a = (k + 0.5) / sides * math.pi * 2
+			local a = (k + phase) / sides * math.pi * 2
 			t.c[k], t.s[k] = math.cos(a), math.sin(a)
 		end
-		trig[sides] = t
+		trig[key] = t
 	end
 	return t
 end
@@ -193,7 +198,7 @@ local function Ring(ring, px, py, pz, vx, vy, vz, wx, wy, wz, r, light, tr, side
 end
 
 -- One strand as a short tube bowed around corners and wavering a little, radius ra at its old end and rb at its new one.
-local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
+local function Tube(e, ra, rb, sides, cr, cg, cb, segments, ridged)
 	segments = segments or SEGMENTS
 	local a, b = e.a, e.b
 	local na, nb = a.normal, b.normal
@@ -218,7 +223,7 @@ local function Tube(e, ra, rb, sides, cr, cg, cb, segments)
 	local cy = (ay + by) * 0.5 + uy * bend + sy * wig
 	local cz = (az + bz) * 0.5 + uz * bend + sz * wig
 
-	local tr = Trig(sides)
+	local tr = Trig(sides, ridged)
 	local vScale = 1 / (math.pi * (ra + rb) * TEX_STRETCH)
 	local v, lx, ly, lz = Hash(e.eid + 3), ax, ay, az
 	for seg = 0, segments do
@@ -422,7 +427,7 @@ local function Build(chunk)
 			local tint = 0.9 + 0.2 * Hash(e.eid + 7)
 			local r = Radius(e)
 			Tube(e, r, r * TAPER, ROOT_SIDES,
-				Lerp(k, ROOT[1], VEIN[1]) * tint, Lerp(k, ROOT[2], VEIN[2]) * tint, Lerp(k, ROOT[3], VEIN[3]) * tint)
+				Lerp(k, ROOT[1], VEIN[1]) * tint, Lerp(k, ROOT[2], VEIN[2]) * tint, Lerp(k, ROOT[3], VEIN[3]) * tint, nil, true)
 		end
 	end)
 	mesh.End()
