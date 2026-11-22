@@ -34,9 +34,10 @@ local MOVED = 256
 local PLAN_DROP = 512
 local LOCK_TIME = 6
 local KEEP_MOVED = 160
--- A route point only counts as reached with a strand right on it: no further off than the mat's own spacing,
--- which is as close as a leap or growth can put one before the spot counts as crowded.
-local ON = 16
+-- A route point only counts as reached with a strand right on it: no further off than growth's arrival
+-- distance, or the last stretch between reaching a point and stopping short of it can only be crossed by a
+-- leap. That has to be at least ARRIVE in init.lua (32), or thin front strands stall on every point.
+local ON = 32
 local LOOKAHEAD = 5
 -- How far ahead the route's growing strand looks for mat to hop onto when it can't grow.
 local HOP = 24
@@ -50,6 +51,9 @@ local PARTIAL_GAIN = 128
 local SMOOTH_SPAN = 6
 local SMOOTH_LEN = 160
 local BEND = 0.9
+-- A strand at the crease on either face is close enough to have rounded the corner. Requiring the exit face
+-- itself (dot > BEND) deadlocked on bends sharper than ~26 degrees until the point timed out and was skipped.
+local CORNER_FACING = 0.5
 local CORNER_FAR = 2 * 40
 local CORNER_PROBE = 12
 local LEAP_RANGE = 64
@@ -440,7 +444,9 @@ end
 local function Touched(mat, body, p)
 	if p.corner then
 		return mat:Nearest(p.pos, ON, function(n)
-			return body[n] and not n.air and n.normal:Dot(p.exit) > BEND and Clear(n.pos, n.normal, p.pos, p.normal)
+			return body[n] and not n.air
+				and (n.normal:Dot(p.exit) > BEND or n.normal:Dot(p.normal) > CORNER_FACING)
+				and Clear(n.pos, n.normal, p.pos, p.normal)
 		end) ~= nil
 	end
 	return mat:Nearest(p.pos, ON, function(n)
@@ -646,6 +652,7 @@ end
 -- While it's searching or following what it found, it doesn't drop who it's after for someone else, unless
 -- they walk onto the mat. Flipping between two people used to throw away every search halfway through.
 function ENT:PreyLocked(now)
+	if EvilFungus.Setting("pathfinding") <= 0 and EvilFungus.Setting("nav_probes") <= 0 then return false end
 	return (self.Plan ~= nil or self.Route ~= nil) and now < (self.NavLockUntil or 0)
 end
 

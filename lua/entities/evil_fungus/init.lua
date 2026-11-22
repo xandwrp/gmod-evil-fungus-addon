@@ -601,14 +601,14 @@ function ENT:Flow(dt, now, rate)
 			local edges, safe = node.edges, 0
 			for j = 1, #edges do
 				local other = edges[j].a == node and edges[j].b or edges[j].a
-				if (other.burn and 2 or other.heat or 0) < heat then safe = safe + 1 end
+				if (other.burn and 2 or other.heat or 0) < heat and not other.asleep then safe = safe + 1 end
 			end
 			if safe > 0 then
 				local q = m * math.min(0.9, FLEE * dt) / safe
 				for j = 1, #edges do
 					local e = edges[j]
 					local other = e.a == node and e.b or e.a
-					if (other.burn and 2 or other.heat or 0) < heat then
+					if (other.burn and 2 or other.heat or 0) < heat and not other.asleep then
 						SetMass(mat, other, other.m + q)
 						m = m - q
 					end
@@ -622,7 +622,7 @@ function ENT:Flow(dt, now, rate)
 				local e = edges[j]
 				local other = e.a == node and e.b or e.a
 				local od = dist[other]
-				if od and od < d and other.m < CAP and not other.burn and not other.heat then d, down, to = od, e, other end
+				if od and od < d and other.m < CAP and not other.burn and not other.heat and not other.asleep then d, down, to = od, e, other end
 			end
 			if down then
 				local q = m * math.min(0.9, rate * Conductance(mat, down, now) / down.len * dt)
@@ -635,7 +635,7 @@ function ENT:Flow(dt, now, rate)
 					local e = edges[j]
 					local other = e.a == node and e.b or e.a
 					local om = other.m
-					if om < m and not other.burn and not other.heat then
+					if om < m and not other.burn and not other.heat and not other.asleep then
 						local q = (m - om) * spread
 						m = m - q
 						SetMass(mat, other, om + q)
@@ -665,7 +665,7 @@ function ENT:Slump(dt)
 				local e = edges[j]
 				local other = e.a == node and e.b or e.a
 				local om = other.m
-				if om < m then
+				if om < m and not other.asleep then
 					local q = (m - om) * k
 					m = m - q
 					SetMass(mat, other, om + q)

@@ -587,9 +587,11 @@ local function Rise(self, felt, now)
 		s.m0 = nil
 	end
 	-- Anything that grew onto the patch while it slept is joined to the nearest sleeper for real.
+	-- A neighbour still asleep is left alone: it has no live mass to give, and linking to it would let
+	-- flow push body into a strand the mat treats as dead, losing it at the edge.
 	for _, link in ipairs(links) do
 		local other = link[1]
-		if not other.dead then
+		if not other.dead and not other.asleep then
 			local joined = false
 			for _, e in ipairs(other.edges) do
 				if mine[e.a] or mine[e.b] then

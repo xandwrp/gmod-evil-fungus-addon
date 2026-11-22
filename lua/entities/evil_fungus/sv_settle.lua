@@ -22,6 +22,8 @@ local RUN_MAX = 8
 local RUNS = { 8, 64 }
 local RUN_FLAT = 12
 local RUN_FACING = 0.95
+-- Only so many settled patches are looked at for merging in one pass; the cursor carries on next pass.
+local MERGE_SCAN = 256
 -- Which two axes lie along a surface facing each way (Mat.Bucket: up, down, +x, -x, +y, -y).
 local ALONG = { [0] = { 1, 2 }, [1] = { 1, 2 }, [2] = { 2, 3 }, [3] = { 2, 3 }, [4] = { 1, 3 }, [5] = { 1, 3 } }
 
@@ -78,8 +80,9 @@ local function Flat(list)
 end
 
 function ENT:Settling(now)
-	if now < (self.NextFold or 0) then return end
 	local hurt = EvilFungus.Setting("hurtilizer")
+	if hurt <= 0 and EvilFungus.Setting("settle") <= 0 then return end
+	if now < (self.NextFold or 0) then return end
 	self.NextFold = now + Lerp(hurt, FOLD_INTERVAL[1], FOLD_INTERVAL[2])
 	local age, most = AGE * (1 - hurt), math.Round(Lerp(hurt, FOLDS[1], FOLDS[2]))
 	local mat = self.Mat
@@ -141,7 +144,24 @@ end
 function ENT:Merging(now, stirring, age, most)
 	local mat = self.Mat
 	local at, grid = {}, {}
-	for node in pairs(mat.settled) do
+	-- Walk a slice of the settled patches each pass instead of the whole tree. The cursor wraps, and a
+	-- removed key just resets it, so no patch starves and no pass goes unbounded.
+	local scanned, start, cursor = 0, self.MergeAt, self.MergeAt
+	local wrapped = false
+	while scanned < MERGE_SCAN do
+		local ok, node = pcall(next, mat.settled, cursor)
+		if not ok then
+			cursor, start, node = nil, nil, next(mat.settled)
+		end
+		if node == nil then
+			if not start or wrapped then break end
+			wrapped, cursor = true, nil
+			node = next(mat.settled)
+			if node == nil then break end
+		end
+		if wrapped and node == start then break end
+		cursor = node
+		scanned = scanned + 1
 		if node.sleepers and not node.run and not node.burn and not node.heat and not mat.woven[node]
 			and now - (node.born or 0) > age and node ~= self.Goal and node ~= self.PreyNode and not (self.Sources and self.Sources[node]) then
 			local clear = true
@@ -161,6 +181,7 @@ function ENT:Merging(now, stirring, age, most)
 			end
 		end
 	end
+	self.MergeAt = cursor
 	if not next(at) then return end
 
 	local function Next(node, axis, step)
@@ -190,7 +211,7 @@ function ENT:Merging(now, stirring, age, most)
 						merged.run = true
 						made = made + 1
 						if made >= most then
-							self.GoalStale = true
+							self.GoalStale, self.MergeAt = true, cursor
 							return
 						end
 					end
