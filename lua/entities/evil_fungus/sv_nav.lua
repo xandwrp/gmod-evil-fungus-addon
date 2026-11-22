@@ -457,11 +457,20 @@ end
 -- A route point close by and in plain view of the strand nearest it doesn't need growing to: the strand
 -- just reaches over and puts one there, if it can pay for it. Corners land on the face past the crease, so
 -- they count as rounded. Spaced out so a route can't be crossed faster than growth could manage.
+-- Round a corner or over a lip the straight line to the point is cut by the very solid the mat goes round,
+-- so the crease between the strand and the point stands in for the view. The strand still plants on the
+-- point; the reach just goes the way the mat would, instead of stalling on every corner until it times out.
+local function Reachable(from, p)
+	if Clear(from.pos, from.normal, p.pos, p.normal) then return true end
+	local c = Corner(from, p)
+	return c ~= nil and Clear(from.pos, from.normal, c.pos, c.normal)
+end
+
 function ENT:LeapTo(p, now)
 	if now < (self.LeapAt or 0) then return end
 	local body = self:Connected(now)
 	local from = self.Mat:Nearest(p.pos, LEAP_RANGE, function(n) return body[n] and not n.air end)
-	if not from or not Clear(from.pos, from.normal, p.pos, p.normal) then return end
+	if not from or not Reachable(from, p) then return end
 	local node = self:Leap(from, p.pos, p.exit or p.normal, now)
 	if not node then return end
 	body[node] = true
