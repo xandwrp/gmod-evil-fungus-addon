@@ -298,6 +298,7 @@ function ENT:Smell(now)
 		if IsValid(ent) then Sniff(ent) end
 	end
 	if busy or not best then return end
+	if best ~= prey and IsValid(prey) and self:PreyLocked(now) then return end
 
 	if best ~= prey then self.NextDecide = 0 end
 	self.Prey, self.PreyNode, self.PreyFrom, self.FeltAt, self.Smelled = best, bestNode, nil, now, best
@@ -441,6 +442,7 @@ function ENT:Felt(ent, node, now, from)
 	local prey = self.Prey
 	if IsValid(prey) and prey ~= ent then
 		if self.Eating then return end
+		if self:PreyLocked(now) and not self:Touches(ent) then return end
 		-- Whoever's on it or on the air beats a rumble from somewhere off the mat.
 		if from and (self:Touches(prey) or self.Smelled == prey) then return end
 	end
@@ -491,8 +493,11 @@ function ENT:Breathe(dt)
 		if not IsValid(rag) then
 			self.Claimed[rag] = nil
 		elseif not (s and s.corpse) then
+			-- Settled mat round them stays settled; what they give goes into the patch they're lying on.
 			local w = EvilFungus.Sleep.wired[rag]
-			local node = w and w.fungus == self and not w.nest.dead and w.nest or mat:Nearest(rag:GetPos(), SLEEPER_RADIUS)
+			local pos = rag:GetPos()
+			local node = w and w.fungus == self and EvilFungus.Mat.Holder(w.nest)
+				or mat:Nearest(pos, SLEEPER_RADIUS) or mat:NearestPatch(pos, SLEEPER_RADIUS)
 			if node then mat:SetMass(node, node.m + BREATH_GAIN * dt) end
 		end
 	end

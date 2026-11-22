@@ -4,6 +4,7 @@ include("shared.lua")
 if not Evil then return end
 include("evil_fungus/sv_mat.lua")
 include("sv_feel.lua")
+include("sv_nav.lua")
 include("sv_debug.lua")
 include("sv_settle.lua")
 
@@ -20,6 +21,7 @@ local MIN_BODY = 8
 local REACH_RATE = 2.5
 local SPREAD_RATE = 3
 local REACH_JITTER = 0.7
+local ROUTE_JITTER = 0.4
 local SEED_RING = 8
 local DECIDE_INTERVAL = 0.25
 local COST_WINDOW = 1
@@ -198,6 +200,8 @@ function ENT:Think()
 		if self.Absorbed then return end
 		self:Spores(dt)
 		t = self:Cost("grow", t)
+		self:StepPlan(now)
+		t = self:Cost("nav", t)
 		self:Settling(now)
 		self:Rouse(now)
 		t = self:Cost("settle", t)
@@ -306,6 +310,9 @@ local function Detour(node, target)
 end
 
 function ENT:Around(goal, now)
+	-- A way round that was actually found beats feeling along the wall.
+	local routed = self:Navigate(goal, now)
+	if routed then return routed end
 	local target = self.Target
 	if not goal or not target or self.Hunting and (self.Tunnel or 0) > 0 then
 		self.Waypoint = nil
@@ -594,14 +601,14 @@ function ENT:Flow(dt, now, rate)
 			local edges, safe = node.edges, 0
 			for j = 1, #edges do
 				local other = edges[j].a == node and edges[j].b or edges[j].a
-				if (other.burn and 2 or other.heat or 0) < heat then safe = safe + 1 end
+				if (other.burn and 2 or other.heat or 0) < heat and not other.asleep then safe = safe + 1 end
 			end
 			if safe > 0 then
 				local q = m * math.min(0.9, FLEE * dt) / safe
 				for j = 1, #edges do
 					local e = edges[j]
 					local other = e.a == node and e.b or e.a
-					if (other.burn and 2 or other.heat or 0) < heat then
+					if (other.burn and 2 or other.heat or 0) < heat and not other.asleep then
 						SetMass(mat, other, other.m + q)
 						m = m - q
 					end
@@ -615,7 +622,7 @@ function ENT:Flow(dt, now, rate)
 				local e = edges[j]
 				local other = e.a == node and e.b or e.a
 				local od = dist[other]
-				if od and od < d and other.m < CAP and not other.burn and not other.heat then d, down, to = od, e, other end
+				if od and od < d and other.m < CAP and not other.burn and not other.heat and not other.asleep then d, down, to = od, e, other end
 			end
 			if down then
 				local q = m * math.min(0.9, rate * Conductance(mat, down, now) / down.len * dt)
@@ -628,7 +635,7 @@ function ENT:Flow(dt, now, rate)
 					local e = edges[j]
 					local other = e.a == node and e.b or e.a
 					local om = other.m
-					if om < m and not other.burn and not other.heat then
+					if om < m and not other.burn and not other.heat and not other.asleep then
 						local q = (m - om) * spread
 						m = m - q
 						SetMass(mat, other, om + q)
@@ -658,7 +665,7 @@ function ENT:Slump(dt)
 				local e = edges[j]
 				local other = e.a == node and e.b or e.a
 				local om = other.m
-				if om < m then
+				if om < m and not other.asleep then
 					local q = (m - om) * k
 					m = m - q
 					SetMass(mat, other, om + q)
@@ -707,6 +714,29 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	if not self.Hunting and goal and target and node.pos:DistToSqr(target) < goal.pos:DistToSqr(target) then
 		self.Goal = node
 	end
+	self:Meet(node, now)
+	return node
+end
+
+-- What one plant costs in body. Zero when hurtilizer is on, which makes the mat grow free.
+function ENT:GrowCost()
+	return EvilFungus.Setting("hurtilizer") > 0 and 0 or GROW_COST * EvilFungus.Setting("grow_cost")
+end
+
+-- Puts a strand right on a route point from a strand that can see it, paid for like any other. The
+-- plant is forced past the crowding check, since a point only counts as reached once a strand is on it.
+-- pay names the strand the body comes out of, for when that is not the one the strand grows from.
+function ENT:Leap(from, pos, normal, now, pay)
+	if from.burn or from.heat or from.air then return end
+	local mat = self.Mat
+	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") or self.Limit and mat.count - mat.wovenCount >= self.Limit then return end
+	local cost = self:GrowCost()
+	local payer = pay or from
+	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
+	local node = self.Mat:Leap(from, pos, normal, now, true)
+	if not node then return end
+	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
+	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
 	self:Meet(node, now)
 	return node
 end
@@ -867,14 +897,20 @@ function ENT:Spread(dt, now)
 		self.ReachTurn = self.ReachTurn % #targets + 1
 		local t = targets[self.ReachTurn]
 		if not frontier or t.best and not Frontier(t.best) then Scan() end
-		local best, target, tunnel = t.best, t.pos, t.tunnel
-		if best and t.d2 > ARRIVE * ARRIVE then
+		local best, target, tunnel, d2 = t.best, t.pos, t.tunnel, t.d2
+		local routed = t == targets[1] and self.Route and self:RouteFrom(now)
+		if routed then best, d2 = routed, routed.pos:DistToSqr(target) end
+		if best and d2 > ARRIVE * ARRIVE then
 			-- Going up after something in the air, it heads straight out through it, and climbs whatever's in the way.
 			local rise = tunnel > 0 and (best.air or math.random() < tunnel)
 			local jitter = REACH_JITTER * (0.5 + 0.5 * sprawl) * (rise and RISE_JITTER or 1)
+			-- On a route the points are close together and the wander would only pull it off them.
+			if t == targets[1] and self.Route then jitter = jitter * ROUTE_JITTER end
 			local dir = (target - best.pos):GetNormalized() + VectorRand() * jitter
-			if not (rise and self:Sprout(best, dir, now, nil, nil, true)) and not self.Absorbed then self:Sprout(best, dir, now) end
+			local grown = rise and self:Sprout(best, dir, now, nil, nil, true)
+			if not grown and not self.Absorbed then grown = self:Sprout(best, dir, now) end
 			if self.Absorbed then return end
+			if routed then self:RouteStep(routed, grown, now) end
 		end
 	end
 
@@ -1044,7 +1080,7 @@ end
 function ENT:OnRemove()
 	EvilFungus.Colonies[self] = nil
 	if not self.Absorbed and self.Mat and EvilFungus.Net then
-		for _, node in pairs(self.Mat.nodes) do EvilFungus.Net.Drop(node) end
+		self.Mat:Forget()
 	end
 	if not self.Absorbed then
 		for rag in pairs(self.Claimed or {}) do
