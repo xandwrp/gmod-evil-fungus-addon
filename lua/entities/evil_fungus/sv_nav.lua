@@ -34,10 +34,10 @@ local MOVED = 256
 local PLAN_DROP = 512
 local LOCK_TIME = 6
 local KEEP_MOVED = 160
--- A route point only counts as reached with a strand right on it: no further off than growth's arrival
--- distance, or the last stretch between reaching a point and stopping short of it can only be crossed by a
--- leap. That has to be at least ARRIVE in init.lua (32), or thin front strands stall on every point.
-local ON = 32
+-- A route point only counts as reached when a strand is planted on the point itself. Growth steps in
+-- strides and lands where it lands, so LeapTo puts a node exactly on the point to finish it; merely
+-- being near it no longer counts.
+local ON = 4
 local LOOKAHEAD = 5
 -- How far ahead the route's growing strand looks for mat to hop onto when it can't grow.
 local HOP = 24

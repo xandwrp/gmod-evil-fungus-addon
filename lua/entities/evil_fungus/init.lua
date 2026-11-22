@@ -718,14 +718,15 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	return node
 end
 
--- Puts a strand right on a route point from a strand that can see it, paid for like any other.
+-- Puts a strand right on a route point from a strand that can see it, paid for like any other. The
+-- plant is forced past the crowding check, since a point only counts as reached once a strand is on it.
 function ENT:Leap(from, pos, normal, now)
 	if from.burn or from.heat or from.air then return end
 	local mat = self.Mat
 	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") or self.Limit and mat.count - mat.wovenCount >= self.Limit then return end
 	local cost = EvilFungus.Setting("hurtilizer") > 0 and 0 or GROW_COST * EvilFungus.Setting("grow_cost")
 	if from.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
-	local node = self.Mat:Leap(from, pos, normal, now)
+	local node = self.Mat:Leap(from, pos, normal, now, true)
 	if not node then return end
 	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
 	if cost > 0 then self.Mat:SetMass(from, from.m - cost) end

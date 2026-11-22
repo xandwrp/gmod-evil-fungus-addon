@@ -369,8 +369,10 @@ function Mat:Grow(from, dir, now, spacing)
 end
 
 -- Straight to a spot already known to be on a surface and in view, without stepping there.
-function Mat:Leap(from, pos, normal, now)
-	if self:Crowded(pos, normal) then return end
+function Mat:Leap(from, pos, normal, now, force)
+	-- A route point is planted on the point itself even when a strand is already close enough
+	-- for Crowded to refuse; that proximity is what used to count as reaching it.
+	if not force and self:Crowded(pos, normal) then return end
 	if bit.band(util.PointContents(pos + normal * 2), bit.bor(CONTENTS_WATER, CONTENTS_SLIME)) ~= 0 then return end
 	local node = self:Add(pos, normal)
 	self:Link(from, node, now)
