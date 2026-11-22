@@ -27,8 +27,6 @@ EvilFungus.SETTINGS = {
 		help = "Explosions blow holes in it and bullets cut its strands. Fire is set by Burn speed below. At 0 nothing hurts it" },
 	{ name = "burn_speed", default = 1, min = 0, max = 5, decimals = 2, label = "Burn speed",
 		help = "How fast fire catches, spreads through it and burns it away. At 1 it burns as it always has. Lower is slower and often leaves most of the mat behind, higher is quicker. At 0 it never catches fire, though bullets and explosions still cut and blow holes in it" },
-	{ name = "burn_max", default = 0, min = 0, max = 5000, decimals = 0, label = "Fire limit",
-		help = "Most strands one fire can burn away. Everything a fire spreads to from where it first caught counts against it, and once it's used up the flames stop spreading and just burn out. At 0 a fire can take the whole mat" },
 	{ name = "eat_props", default = 1, min = 0, max = 1, label = "Eats plants and bodies",
 		help = "Plants, fruit, meat and bodies left on the mat get eaten" },
 	{ name = "aggression", default = 1, min = 0, max = 20, decimals = 2, label = "Aggression",

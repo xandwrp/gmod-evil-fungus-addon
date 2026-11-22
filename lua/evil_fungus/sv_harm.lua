@@ -63,21 +63,9 @@ end
 
 local queued = {}
 
--- One fire: whatever caught from the same spark, so the fire limit can tell how much of the mat it's had.
--- Nil when there is no limit.
-local function Spark()
-	local max = EvilFungus.Setting("burn_max")
-	if max <= 0 then return nil end
-	return { left = math.floor(max) }
-end
-
-function Harm.Ignite(colony, node, now, fire)
+function Harm.Ignite(colony, node, now)
 	if not FireOn() or node.burn or node.dead then return end
-	if fire then
-		if fire.left <= 0 then return end
-		fire.left = fire.left - 1
-	end
-	node.burn, node.fire = now, fire
+	node.burn = now
 	colony.Mat.burning[node] = now
 	if node.nid then queued[#queued + 1] = node.nid end
 	for rag in pairs(colony.Claimed or {}) do
@@ -116,7 +104,6 @@ function Harm.Blast(pos, radius)
 	if lastBlast and now - lastBlastAt < BLAST_GAP and lastBlast:DistToSqr(pos) < radius * radius then return end
 	lastBlast, lastBlastAt = pos, now
 	local kill2 = (radius * BLAST_KILL) ^ 2
-	local fire = Spark()
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
 		colony.Mat:Wake(pos, radius, now)
@@ -124,7 +111,7 @@ function Harm.Blast(pos, radius)
 		for _, h in ipairs(hit) do
 			local node, d2 = h[1], h[2]
 			if Clear(pos, node) then
-				if d2 < kill2 then Kill(colony, node, true) else Harm.Ignite(colony, node, now, fire) end
+				if d2 < kill2 then Kill(colony, node, true) else Harm.Ignite(colony, node, now) end
 			end
 		end
 	end
@@ -133,13 +120,12 @@ end
 local function Catch(pos, radius, now)
 	if not FireOn() then return end
 	local chance = math.min(1, CATCH * BurnSpeed())
-	local fire = Spark()
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
 		colony.Mat:Wake(pos, radius, now)
 		colony.Mat:Near(pos, radius, function(node) hit[#hit + 1] = node end)
 		for _, node in ipairs(hit) do
-			if math.random() < chance then Harm.Ignite(colony, node, now, fire) end
+			if math.random() < chance then Harm.Ignite(colony, node, now) end
 		end
 	end
 end
@@ -244,7 +230,7 @@ local function Leap(node, now)
 			if other ~= node and not other.burn and not mat:Linked(node, other) then near[#near + 1] = other end
 		end)
 		local other = near[math.random(math.max(1, #near))]
-		if other and Clear(from, other) then Harm.Ignite(colony, other, now, node.fire) end
+		if other and Clear(from, other) then Harm.Ignite(colony, other, now) end
 	end
 end
 
@@ -257,7 +243,7 @@ local function Burn(now)
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		local mat = IsValid(colony) and not colony.Absorbed and colony.Mat
 		if mat and next(mat.burning) then
-			local spread, from, burnt, leap = {}, {}, {}, {}
+			local spread, burnt, leap = {}, {}, {}
 			for node, at in pairs(mat.burning) do
 				if node.dead then
 					mat.burning[node] = nil
@@ -266,15 +252,12 @@ local function Burn(now)
 				else
 					for _, e in ipairs(node.edges) do
 						local other = e.a == node and e.b or e.a
-						if not other.burn and math.random() < spreadChance then
-							local i = #spread + 1
-							spread[i], from[i] = other, node.fire
-						end
+						if not other.burn and math.random() < spreadChance then spread[#spread + 1] = other end
 					end
 					if math.random() < leapChance then leap[#leap + 1] = node end
 				end
 			end
-			for i, node in ipairs(spread) do Harm.Ignite(colony, node, now, from[i]) end
+			for _, node in ipairs(spread) do Harm.Ignite(colony, node, now) end
 			for _, node in ipairs(leap) do Leap(node, now) end
 			for _, node in ipairs(burnt) do Kill(colony, node, true) end
 		end
@@ -286,7 +269,7 @@ local function Douse()
 	for colony in pairs(EvilFungus.Colonies or {}) do
 		local mat = IsValid(colony) and colony.Mat
 		if mat and next(mat.burning) then
-			for node in pairs(mat.burning) do node.burn, node.fire = nil, nil end
+			for node in pairs(mat.burning) do node.burn = nil end
 			mat.burning = {}
 		end
 	end
