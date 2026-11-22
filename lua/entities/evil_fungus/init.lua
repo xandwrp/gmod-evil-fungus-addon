@@ -718,18 +718,25 @@ function ENT:Sprout(from, dir, now, spacing, payer, rise, catch)
 	return node
 end
 
+-- What one plant costs in body. Zero when hurtilizer is on, which makes the mat grow free.
+function ENT:GrowCost()
+	return EvilFungus.Setting("hurtilizer") > 0 and 0 or GROW_COST * EvilFungus.Setting("grow_cost")
+end
+
 -- Puts a strand right on a route point from a strand that can see it, paid for like any other. The
 -- plant is forced past the crowding check, since a point only counts as reached once a strand is on it.
-function ENT:Leap(from, pos, normal, now)
+-- pay names the strand the body comes out of, for when that is not the one the strand grows from.
+function ENT:Leap(from, pos, normal, now, pay)
 	if from.burn or from.heat or from.air then return end
 	local mat = self.Mat
 	if EvilFungus.Strands() >= EvilFungus.Setting("max_nodes") or self.Limit and mat.count - mat.wovenCount >= self.Limit then return end
-	local cost = EvilFungus.Setting("hurtilizer") > 0 and 0 or GROW_COST * EvilFungus.Setting("grow_cost")
-	if from.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
+	local cost = self:GrowCost()
+	local payer = pay or from
+	if payer.m < cost or (EvilFungus.SproutsLeft or 1) <= 0 then return end
 	local node = self.Mat:Leap(from, pos, normal, now, true)
 	if not node then return end
 	EvilFungus.SproutsLeft = (EvilFungus.SproutsLeft or 1) - 1
-	if cost > 0 then self.Mat:SetMass(from, from.m - cost) end
+	if cost > 0 then self.Mat:SetMass(payer, payer.m - cost) end
 	self:Meet(node, now)
 	return node
 end

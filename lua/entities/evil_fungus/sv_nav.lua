@@ -466,19 +466,24 @@ function ENT:LeapTo(p, now)
 	local body = self:Connected(now)
 	local from = self.Mat:Nearest(p.pos, LEAP_RANGE, function(n) return body[n] and not n.air end)
 	if not from then return end
-	if not Clear(from.pos, from.normal, p.pos, p.normal) then
+	local node
+	if Clear(from.pos, from.normal, p.pos, p.normal) then
+		node = self:Leap(from, p.pos, p.exit or p.normal, now)
+	else
 		-- Both legs of the bend have to be clear, the same check the search makes: one leg alone plants
 		-- through a thin wall, or over a lip onto the face round the far side of it.
 		if not Joined(from, p) then return end
 		local c = Corner(from, p)
 		if not c then return end
 		-- On the crease first, so the strand follows the solid round the bend instead of cutting the corner.
+		-- The crease strand is new and has no body of its own yet, so the strand the reach starts from pays
+		-- for both plants; it has to be able to afford both before the first one goes down.
+		if from.m < self:GrowCost() * 2 then return end
 		local crease = self:Leap(from, c.pos, c.normal, now)
 		if not crease then return end
 		body[crease] = true
-		from = crease
+		node = self:Leap(crease, p.pos, p.exit or p.normal, now, from)
 	end
-	local node = self:Leap(from, p.pos, p.exit or p.normal, now)
 	if not node then return end
 	body[node] = true
 	self.LeapAt = now + LEAP_GAP / math.max(0.1, EvilFungus.Setting("grow_speed") * EvilFungus.TimeScale())
