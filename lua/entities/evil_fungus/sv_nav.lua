@@ -457,20 +457,27 @@ end
 -- A route point close by and in plain view of the strand nearest it doesn't need growing to: the strand
 -- just reaches over and puts one there, if it can pay for it. Corners land on the face past the crease, so
 -- they count as rounded. Spaced out so a route can't be crossed faster than growth could manage.
--- Round a corner or over a lip the straight line to the point is cut by the very solid the mat goes round,
--- so the crease between the strand and the point stands in for the view. The strand still plants on the
--- point; the reach just goes the way the mat would, instead of stalling on every corner until it times out.
-local function Reachable(from, p)
-	if Clear(from.pos, from.normal, p.pos, p.normal) then return true end
-	local c = Corner(from, p)
-	return c ~= nil and Clear(from.pos, from.normal, c.pos, c.normal)
-end
-
+-- Round a corner or over a lip the straight line to the point is cut by the very solid the mat goes round.
+-- Where the crease between the strand and the point is real, and both legs of the bend are clear, the strand
+-- plants on the crease first and then on the point, so the reach runs over the solid the way growth would
+-- instead of cutting through a wall or onto a face round the far side of a lip.
 function ENT:LeapTo(p, now)
 	if now < (self.LeapAt or 0) then return end
 	local body = self:Connected(now)
 	local from = self.Mat:Nearest(p.pos, LEAP_RANGE, function(n) return body[n] and not n.air end)
-	if not from or not Reachable(from, p) then return end
+	if not from then return end
+	if not Clear(from.pos, from.normal, p.pos, p.normal) then
+		-- Both legs of the bend have to be clear, the same check the search makes: one leg alone plants
+		-- through a thin wall, or over a lip onto the face round the far side of it.
+		if not Joined(from, p) then return end
+		local c = Corner(from, p)
+		if not c then return end
+		-- On the crease first, so the strand follows the solid round the bend instead of cutting the corner.
+		local crease = self:Leap(from, c.pos, c.normal, now)
+		if not crease then return end
+		body[crease] = true
+		from = crease
+	end
 	local node = self:Leap(from, p.pos, p.exit or p.normal, now)
 	if not node then return end
 	body[node] = true
