@@ -63,12 +63,23 @@ end
 
 local queued = {}
 
+-- The fire limit is per source. A barrel burning on the mat, an env_fire, a player on fire or an engine
+-- fire entity each get one limit for as long as they are there. Scan runs every pass, so without this the
+-- same flame was handed a fresh burn_max four times a second and could still eat the whole mat.
+local sparks = setmetatable({}, { __mode = "k" })
+
 -- One fire: whatever caught from the same spark, so the fire limit can tell how much of the mat it's had.
--- Nil when there is no limit.
-local function Spark()
+-- Nil when there is no limit. With a source, the same one comes back until that source is gone.
+local function Spark(src)
 	local max = EvilFungus.Setting("burn_max")
 	if max <= 0 then return nil end
-	return { left = math.floor(max) }
+	if not IsValid(src) then return { left = math.floor(max) } end
+	local fire = sparks[src]
+	if not fire then
+		fire = { left = math.floor(max) }
+		sparks[src] = fire
+	end
+	return fire
 end
 
 function Harm.Ignite(colony, node, now, fire)
@@ -130,10 +141,10 @@ function Harm.Blast(pos, radius)
 	end
 end
 
-local function Catch(pos, radius, now)
+local function Catch(pos, radius, now, src)
 	if not FireOn() then return end
 	local chance = math.min(1, CATCH * BurnSpeed())
-	local fire = Spark()
+	local fire = Spark(src)
 	for _, colony in ipairs(Around(pos, radius)) do
 		local hit = {}
 		colony.Mat:Wake(pos, radius, now)
@@ -216,20 +227,20 @@ local function Scan(now)
 		local on = flame:GetParent()
 		if not IsValid(on) then on = flame:GetInternalVariable("m_hEntAttached") end
 		if IsValid(on) then
-			fires[#fires + 1] = { on:GetPos(), math.min(FLAME_MAX, on:BoundingRadius() + FLAME_PAD) }
+			fires[#fires + 1] = { on:GetPos(), math.min(FLAME_MAX, on:BoundingRadius() + FLAME_PAD), on }
 		else
-			fires[#fires + 1] = { flame:GetPos(), FLAME_PAD * 2 }
+			fires[#fires + 1] = { flame:GetPos(), FLAME_PAD * 2, flame }
 		end
 	end
 	for fire in pairs(flames) do
 		if not IsValid(fire) then
 			flames[fire] = nil
 		elseif Burning(fire) then
-			fires[#fires + 1] = { fire:GetPos(), SOURCES[fire:GetClass()] or math.Clamp(fire:BoundingRadius() + FLAME_PAD, FLAME_PAD, FLAME_MAX) }
+			fires[#fires + 1] = { fire:GetPos(), SOURCES[fire:GetClass()] or math.Clamp(fire:BoundingRadius() + FLAME_PAD, FLAME_PAD, FLAME_MAX), fire }
 		end
 	end
 	for _, f in ipairs(fires) do
-		Catch(f[1], f[2], now)
+		Catch(f[1], f[2], now, f[3])
 		Heat(f[1], f[2])
 	end
 	Retreat()
@@ -362,11 +373,11 @@ end)
 
 local lastBurn, lastBurnAt = nil, -math.huge
 
-local function Scald(pos)
+local function Scald(pos, src)
 	local now = CurTime()
 	if lastBurn and now - lastBurnAt < BURN_GAP and lastBurn:DistToSqr(pos) < BURN_REACH * BURN_REACH then return end
 	lastBurn, lastBurnAt = pos, now
-	Catch(pos, BURN_REACH, now)
+	Catch(pos, BURN_REACH, now, src)
 end
 
 hook.Add("EntityTakeDamage", "EvilFungusHarm", function(_, dmg)
@@ -378,16 +389,16 @@ hook.Add("EntityTakeDamage", "EvilFungusHarm", function(_, dmg)
 		if IsValid(inflictor) and inflictor:GetClass() == "env_explosion" then return end
 		Harm.Blast(pos, BLAST_MAGNITUDE * 2.5)
 	elseif bit.band(dmg:GetDamageType(), FIRE_DAMAGE) ~= 0 then
-		Scald(pos)
+		Scald(pos, dmg:GetAttacker())
 	end
 end)
 
 local bolts = {}
 
-function Harm.Bolt(pos)
+function Harm.Bolt(pos, src)
 	if not On() or not next(EvilFungus.Colonies or {}) then return end
 	Harm.Cut(pos, BOLT_CUT)
-	Catch(pos, BOLT_HEAT, CurTime())
+	Catch(pos, BOLT_HEAT, CurTime(), src)
 end
 
 hook.Add("OnEntityCreated", "EvilFungusBolt", function(ent)
@@ -402,7 +413,7 @@ hook.Add("Think", "EvilFungusBolt", function()
 			bolts[bolt] = nil
 		elseif now - at > BOLT_ARM and (bolt:GetMoveType() == MOVETYPE_NONE or bolt:GetVelocity():LengthSqr() < 100) then
 			bolts[bolt] = nil
-			Harm.Bolt(bolt:GetPos())
+			Harm.Bolt(bolt:GetPos(), bolt)
 		end
 	end
 end)
