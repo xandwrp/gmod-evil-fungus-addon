@@ -68,17 +68,24 @@ local queued = {}
 -- same flame was handed a fresh burn_max four times a second and could still eat the whole mat.
 local sparks = setmetatable({}, { __mode = "k" })
 
+-- Seconds a fire holds on to its limit after it last set something alight. A source outlives its burning:
+-- a barrel lit twice or a player set on fire again is a new fire and deserves a fresh limit, so the entry
+-- is dropped once nothing has caught from it for this long.
+local SPARK_IDLE = 5
+
 -- One fire: whatever caught from the same spark, so the fire limit can tell how much of the mat it's had.
--- Nil when there is no limit. With a source, the same one comes back until that source is gone.
+-- Nil when there is no limit. With a source, the same one comes back while that fire is still going.
 local function Spark(src)
 	local max = EvilFungus.Setting("burn_max")
 	if max <= 0 then return nil end
 	if not IsValid(src) then return { left = math.floor(max) } end
+	local now = CurTime()
 	local fire = sparks[src]
-	if not fire then
+	if not fire or now - fire.at > SPARK_IDLE then
 		fire = { left = math.floor(max) }
 		sparks[src] = fire
 	end
+	fire.at = now
 	return fire
 end
 
